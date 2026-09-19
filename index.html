@@ -58,6 +58,509 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .recharts-wrapper,.recharts-surface{outline:none}
 @media (prefers-reduced-motion:reduce){.avail,.screen-in,.drawer-in,.fade-in,.pop-in,.flow,.scan{animation:none}}
 </style>
+<!-- Sincronizacao (Supabase) + backup -->
+<script>
+(function () {
+  'use strict';
+
+  /* ===== Configuracao do Supabase (chave publica: segura para ficar no codigo) ===== */
+  var SB_URL = 'https://ebttelluwlhhrssytknu.supabase.co';
+  var SB_KEY = 'sb_publishable_A_DDf-7rfujBd22USiWM0g_g4j8oULo';
+  var PREFIX = 'skilltree-';
+  var STATE_KEY = 'stsync-state-v1';
+  var TABLE = '/rest/v1/skilltree_kv';
+
+  var ls = null;
+  try { ls = window.localStorage; void ls.length; } catch (e) { ls = null; }
+  if (!ls) return;
+
+  var rawSet = Storage.prototype.setItem;
+  var rawGet = Storage.prototype.getItem;
+
+  /* ===== Estado persistido (fora do prefixo, nao entra no backup) ===== */
+  function loadState() {
+    try {
+      var o = JSON.parse(rawGet.call(ls, STATE_KEY) || 'null');
+      if (o && typeof o === 'object') {
+        return { session: o.session || null, uid: o.uid || null, base: o.base || {}, dirty: o.dirty || {}, lastSync: o.lastSync || 0 };
+      }
+    } catch (e) {}
+    return { session: null, uid: null, base: {}, dirty: {}, lastSync: 0 };
+  }
+  var S = loadState();
+  function save() { try { rawSet.call(ls, STATE_KEY, JSON.stringify(S)); } catch (e) {} }
+
+  var reloading = false, syncing = false, again = false, timer = null;
+  var lastError = null, choice = null, lastAct = Date.now(), ui = null;
+
+  /* ===== Observa as gravacoes do app para saber o que mudou ===== */
+  Storage.prototype.setItem = function (k, v) {
+    if (this === ls && typeof k === 'string' && k.indexOf(PREFIX) === 0) {
+      if (reloading) return;
+      var old = null;
+      try { old = rawGet.call(this, k); } catch (e) {}
+      rawSet.call(this, k, v);
+      if (old !== String(v)) { S.dirty[k] = Date.now(); save(); scheduleSync(3000); render(); }
+      return;
+    }
+    return rawSet.apply(this, arguments);
+  };
+
+  function localMap() {
+    var m = {};
+    for (var i = 0; i < ls.length; i++) {
+      var k = ls.key(i);
+      if (k && k.indexOf(PREFIX) === 0) m[k] = rawGet.call(ls, k);
+    }
+    return m;
+  }
+  function pendingCount() { return Object.keys(S.dirty).length; }
+
+  /* ===== Rede ===== */
+  function friendly(j, st) {
+    var code = j && (j.error_code || j.code) || '';
+    var m = j && (j.msg || j.error_description || j.message || j.error) || '';
+    var ml = String(m).toLowerCase();
+    if (code === 'invalid_credentials' || ml.indexOf('invalid login') >= 0) return 'E-mail ou senha incorretos.';
+    if (code === 'user_already_exists' || ml.indexOf('already registered') >= 0) return 'Este e-mail já tem conta. Use “Entrar”.';
+    if (code === 'weak_password' || ml.indexOf('at least') >= 0) return 'A senha precisa ter pelo menos 6 caracteres.';
+    if (code === 'email_not_confirmed' || ml.indexOf('not confirmed') >= 0) return 'Confirme o e-mail antes de entrar (veja sua caixa de entrada).';
+    if (code === 'signup_disabled' || ml.indexOf('signups not allowed') >= 0 || ml.indexOf('signup is disabled') >= 0) return 'Novos cadastros estão desativados. Use “Entrar” com a conta que você já criou.';
+    if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' || st === 429) return 'Muitas tentativas. Aguarde um pouco e tente de novo.';
+    if (code === 'PGRST205' || code === '42P01' || (st === 404 && ml.indexOf('skilltree_kv') >= 0)) return 'Tabela não encontrada no Supabase. Rode o script SQL de configuração.';
+    return m || ('Erro ' + st);
+  }
+  function mkErr(j, st) { var e = new Error(friendly(j, st)); e.status = st; e.code = j && (j.error_code || j.code) || ''; return e; }
+
+  async function authPost(path, body) {
+    var r = await fetch(SB_URL + path, { method: 'POST', headers: { apikey: SB_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    var j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw mkErr(j, r.status);
+    return j;
+  }
+  function setSession(j) {
+    var exp = j.expires_at || Math.floor(Date.now() / 1000) + (j.expires_in || 3600);
+    S.session = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: exp, user: { id: j.user.id, email: j.user.email } };
+    save();
+  }
+  function signedOut() { var e = new Error('Sessão expirada. Entre de novo.'); e.code = 'signed_out'; return e; }
+
+  async function getToken() {
+    var s = S.session;
+    if (!s) throw signedOut();
+    if (s.expires_at - 60 > Date.now() / 1000) return s.access_token;
+    try {
+      var j = await authPost('/auth/v1/token?grant_type=refresh_token', { refresh_token: s.refresh_token });
+      if (!j.user) j.user = s.user;
+      setSession(j);
+      return S.session.access_token;
+    } catch (e) {
+      if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) { S.session = null; save(); throw signedOut(); }
+      throw e;
+    }
+  }
+  async function rest(query, opt) {
+    opt = opt || {};
+    var tok = await getToken();
+    var h = { apikey: SB_KEY, Authorization: 'Bearer ' + tok };
+    if (opt.body) h['Content-Type'] = 'application/json';
+    if (opt.prefer) h.Prefer = opt.prefer;
+    var r = await fetch(SB_URL + TABLE + query, { method: opt.method || 'GET', headers: h, body: opt.body ? JSON.stringify(opt.body) : undefined });
+    var j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw mkErr(j, r.status);
+    return j || [];
+  }
+  function inList(keys) { return encodeURIComponent('(' + keys.map(function (k) { return '"' + k + '"'; }).join(',') + ')'); }
+  function fetchMeta() { return rest('?select=item_key,updated_at'); }
+  function fetchRows(keys) {
+    return rest('?select=item_key,item_value,updated_at' + (keys ? '&item_key=in.' + inList(keys) : ''));
+  }
+
+  async function pushKeys(keys) {
+    var uid = S.session.user.id;
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], v = rawGet.call(ls, k);
+      if (v === null) { delete S.dirty[k]; continue; }
+      var rows = await rest('?on_conflict=user_id,item_key&select=item_key,updated_at', {
+        method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
+        body: [{ user_id: uid, item_key: k, item_value: v }]
+      });
+      if (rows[0]) {
+        S.base[k] = rows[0].updated_at;
+        if (rawGet.call(ls, k) === v) delete S.dirty[k];
+      }
+      save();
+    }
+  }
+
+  function reloadNow() {
+    var now = Date.now(), t = 0, n = 0;
+    try { var o = JSON.parse(sessionStorage.getItem('stsync-rl') || '{}'); t = o.t || 0; n = o.n || 0; } catch (e) {}
+    if (!t || now - t > 30000) { t = now; n = 0; }
+    n++;
+    try { sessionStorage.setItem('stsync-rl', JSON.stringify({ t: t, n: n })); } catch (e) {}
+    if (n > 4) { lastError = 'Muitas recargas seguidas; atualização automática pausada.'; render(); return false; }
+    reloading = true; save(); location.reload(); return true;
+  }
+
+  /* ===== Primeira conexao deste aparelho com a conta ===== */
+  async function attach() {
+    var uid = S.session.user.id;
+    var rows = await fetchRows(null);
+    var local = localMap();
+    var lkeys = Object.keys(local);
+    if (!rows.length) {
+      await pushKeys(lkeys);
+      S.uid = uid; S.dirty = {}; save();
+      return;
+    }
+    var same = rows.every(function (r) { return local[r.item_key] === r.item_value; });
+    if (same) {
+      rows.forEach(function (r) { S.base[r.item_key] = r.updated_at; });
+      S.uid = uid; S.dirty = {}; save();
+      var cloudKeys = rows.map(function (r) { return r.item_key; });
+      var extra = lkeys.filter(function (k) { return cloudKeys.indexOf(k) < 0; });
+      if (extra.length) await pushKeys(extra);
+      return;
+    }
+    choice = { rows: rows, localCount: lkeys.length };
+    openPanel(true);
+  }
+  async function chooseCloud() {
+    if (!choice) return;
+    var rows = choice.rows;
+    rows.forEach(function (r) {
+      if (rawGet.call(ls, r.item_key) !== r.item_value) rawSet.call(ls, r.item_key, r.item_value);
+      S.base[r.item_key] = r.updated_at;
+    });
+    S.uid = S.session.user.id; S.dirty = {}; save();
+    choice = null; render();
+    reloadNow();
+  }
+  async function chooseLocal() {
+    if (!choice) return;
+    choice = null; render();
+    syncing = true; lastError = null; render();
+    try {
+      await pushKeys(Object.keys(localMap()));
+      S.uid = S.session.user.id; S.dirty = {}; S.lastSync = Date.now(); save();
+    } catch (e) { handleErr(e); }
+    syncing = false; render();
+  }
+
+  /* ===== Ciclo de sincronizacao ===== */
+  async function cycle(reason) {
+    var uid = S.session.user.id;
+    if (S.uid !== uid) { await attach(); return; }
+    var meta = await fetchMeta();
+    var remote = {};
+    meta.forEach(function (r) { remote[r.item_key] = r.updated_at; });
+
+    var pull = [], push = [];
+    Object.keys(remote).forEach(function (k) {
+      if (S.base[k] !== remote[k]) {
+        if (S.dirty[k]) { if (Date.parse(remote[k]) > S.dirty[k]) pull.push(k); else push.push(k); }
+        else pull.push(k);
+      }
+    });
+    Object.keys(S.dirty).forEach(function (k) {
+      if (push.indexOf(k) < 0 && pull.indexOf(k) < 0 && (!(k in remote) || S.base[k] === remote[k])) push.push(k);
+    });
+
+    var noPull = reason === 'hide' || ((reason === 'change' || reason === 'poll') && Date.now() - lastAct < 15000);
+    if (noPull) pull = [];
+
+    var changed = false;
+    if (pull.length) {
+      var rows = await fetchRows(pull);
+      rows.forEach(function (r) {
+        if (rawGet.call(ls, r.item_key) !== r.item_value) { rawSet.call(ls, r.item_key, r.item_value); changed = true; }
+        S.base[r.item_key] = r.updated_at;
+        delete S.dirty[r.item_key];
+      });
+      save();
+    }
+    await pushKeys(push);
+    if (changed) reloadNow();
+  }
+
+  function handleErr(e) {
+    if (e && e.code === 'signed_out') { lastError = null; alertOut(e.message); return; }
+    var m = e && e.message || 'erro';
+    if (/failed to fetch|networkerror|load failed/i.test(m)) m = 'sem conexão com a internet';
+    lastError = m;
+  }
+  function alertOut(text) { if (ui) { sMsg(text, 'warn'); openPanel(true); } }
+
+  async function runSync(reason) {
+    if (!S.session || choice) return;
+    if (syncing) { again = true; return; }
+    syncing = true; lastError = null; render();
+    try {
+      try { await cycle(reason); }
+      catch (e) {
+        if (e && e.status === 401 && S.session) { S.session.expires_at = 0; save(); await cycle(reason); }
+        else throw e;
+      }
+      if (!choice) { S.lastSync = Date.now(); save(); }
+    } catch (e) { handleErr(e); }
+    syncing = false; render();
+    if (again) { again = false; scheduleSync(500); }
+  }
+  function scheduleSync(ms) {
+    if (!S.session) return;
+    clearTimeout(timer);
+    timer = setTimeout(function () { runSync('change'); }, ms || 3000);
+  }
+
+  /* ===== Interface ===== */
+  var css =
+    '#stbk-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:44px;height:44px;border-radius:50%;background:#0b0b0e;border:1px solid rgba(34,211,238,.55);color:#22d3ee;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 0 14px rgba(34,211,238,.25);padding:0;transition:box-shadow .2s,transform .2s}' +
+    '#stbk-btn:hover,#stbk-btn:focus-visible{box-shadow:0 0 20px rgba(34,211,238,.5);transform:translateY(-1px);outline:none}' +
+    '#stbk-btn svg{width:20px;height:20px}' +
+    '#stbk-dot{position:absolute;top:1px;right:1px;width:11px;height:11px;border-radius:50%;border:2px solid #0b0b0e;display:none}' +
+    '#stbk-dot.k-ok{background:#4ade80}#stbk-dot.k-pending,#stbk-dot.k-syncing,#stbk-dot.k-choice{background:#facc15}#stbk-dot.k-error{background:#f87171}' +
+    '#stbk-panel{position:fixed;right:16px;bottom:70px;z-index:2147483000;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 90px);overflow:auto;background:#0b0b0e;border:1px solid rgba(34,211,238,.4);border-radius:10px;padding:16px;color:#e5e7eb;font-family:Rajdhani,system-ui,sans-serif;font-size:15px;line-height:1.35;box-shadow:0 10px 40px rgba(0,0,0,.6);display:none;box-sizing:border-box}' +
+    '#stbk-panel *{box-sizing:border-box}#stbk-panel.open{display:block}' +
+    '#stbk-panel h2{margin:0 0 6px;font-family:Orbitron,Rajdhani,sans-serif;font-size:13px;letter-spacing:.14em;color:#22d3ee;font-weight:700}' +
+    '#stbk-panel p{margin:0 0 10px;color:#9ca3af}' +
+    '#stbk-panel .stbk-sec+.stbk-sec{margin-top:14px;border-top:1px solid #1f2937;padding-top:14px}' +
+    '#stbk-panel .stbk-row{display:flex;gap:8px}' +
+    '#stbk-panel input[type=email],#stbk-panel input[type=password]{width:100%;margin:0 0 8px;padding:10px;border-radius:6px;border:1px solid #374151;background:#050506;color:#e5e7eb;font:16px Rajdhani,system-ui,sans-serif}' +
+    '#stbk-panel input:focus-visible{outline:2px solid #22d3ee;outline-offset:1px}' +
+    '#stbk-panel button.stbk-a{flex:1;cursor:pointer;font:600 15px Rajdhani,system-ui,sans-serif;letter-spacing:.04em;padding:10px 8px;border-radius:6px;background:transparent;min-height:42px}' +
+    '#stbk-panel button.stbk-a:focus-visible{outline:2px solid #facc15;outline-offset:2px}' +
+    '#stbk-panel button.stbk-a:disabled{opacity:.5;cursor:default}' +
+    '.stbk-c{border:1px solid #22d3ee;color:#22d3ee}.stbk-c:hover{background:rgba(34,211,238,.12)}' +
+    '.stbk-r{border:1px solid #ef4444;color:#ef4444}.stbk-r:hover{background:rgba(239,68,68,.12)}' +
+    '.stbk-g{border:1px solid #4b5563;color:#d1d5db}.stbk-g:hover{background:rgba(255,255,255,.06)}' +
+    '#stbk-panel .stbk-msg{margin-top:10px;font-size:14px}' +
+    '.stbk-msg.ok{color:#4ade80}.stbk-msg.err{color:#f87171}.stbk-msg.warn{color:#facc15}' +
+    '#stbk-status.k-ok{color:#4ade80}#stbk-status.k-error{color:#f87171}#stbk-status.k-pending,#stbk-status.k-syncing,#stbk-status.k-choice{color:#facc15}' +
+    '#stbk-user{color:#e5e7eb!important;word-break:break-all}' +
+    '#stbk-choice,#stbk-confirm{display:none;margin-top:12px;border-top:1px solid #1f2937;padding-top:12px}' +
+    '#stbk-choice.open,#stbk-confirm.open{display:block}#stbk-choice p,#stbk-confirm p{color:#e5e7eb}' +
+    '#stbk-choice .stbk-row{flex-wrap:wrap}' +
+    '@media print{#stbk-btn,#stbk-panel{display:none!important}}';
+
+  var html =
+    '<button id="stbk-btn" type="button" aria-label="Sincronização e backup" aria-expanded="false" aria-controls="stbk-panel" title="Sincronização e backup">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' +
+      '<span id="stbk-dot"></span>' +
+    '</button>' +
+    '<div id="stbk-panel" role="dialog" aria-label="Sincronização e backup">' +
+      '<div class="stbk-sec">' +
+        '<h2>SINCRONIZAÇÃO</h2>' +
+        '<div id="stbk-out">' +
+          '<p>Entre com e-mail e senha para manter seus dados iguais em todos os aparelhos.</p>' +
+          '<form id="stbk-form" novalidate>' +
+            '<input id="stbk-mail" type="email" name="email" autocomplete="username" placeholder="E-mail" aria-label="E-mail">' +
+            '<input id="stbk-pass" type="password" name="password" autocomplete="current-password" placeholder="Senha (mín. 6 caracteres)" aria-label="Senha">' +
+            '<div class="stbk-row"><button id="stbk-login" class="stbk-a stbk-c" type="submit">Entrar</button><button id="stbk-signup" class="stbk-a stbk-g" type="button">Criar conta</button></div>' +
+          '</form>' +
+        '</div>' +
+        '<div id="stbk-in">' +
+          '<p id="stbk-user"></p><p id="stbk-status" role="status" aria-live="polite"></p>' +
+          '<div class="stbk-row"><button id="stbk-now" class="stbk-a stbk-c" type="button">Sincronizar agora</button><button id="stbk-logout" class="stbk-a stbk-g" type="button">Sair</button></div>' +
+        '</div>' +
+        '<div id="stbk-choice">' +
+          '<p id="stbk-choice-text"></p>' +
+          '<div class="stbk-row"><button id="stbk-use-cloud" class="stbk-a stbk-c" type="button">Usar a nuvem</button><button id="stbk-use-local" class="stbk-a stbk-r" type="button">Usar este aparelho</button></div>' +
+          '<div class="stbk-row" style="margin-top:8px"><button id="stbk-choice-cancel" class="stbk-a stbk-g" type="button">Cancelar e sair</button></div>' +
+        '</div>' +
+        '<div id="stbk-smsg" class="stbk-msg" role="status" aria-live="polite"></div>' +
+      '</div>' +
+      '<div class="stbk-sec">' +
+        '<h2>BACKUP</h2>' +
+        '<p>Cópia em arquivo dos seus dados, para guardar ou levar a outro aparelho.</p>' +
+        '<div class="stbk-row"><button id="stbk-exp" class="stbk-a stbk-c" type="button">Exportar</button><button id="stbk-imp" class="stbk-a stbk-r" type="button">Importar</button></div>' +
+        '<input id="stbk-file" type="file" accept=".json,application/json" hidden>' +
+        '<div id="stbk-confirm"><p id="stbk-confirm-text"></p><div class="stbk-row"><button id="stbk-ok" class="stbk-a stbk-r" type="button">Substituir</button><button id="stbk-cancel" class="stbk-a stbk-g" type="button">Cancelar</button></div></div>' +
+        '<div id="stbk-msg" class="stbk-msg" role="status" aria-live="polite"></div>' +
+      '</div>' +
+    '</div>';
+
+  function $(id) { return document.getElementById(id); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmm(ts) { var d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function stamp() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function sMsg(t, k) { if (!ui) return; ui.smsg.className = 'stbk-msg ' + (k || ''); ui.smsg.textContent = t || ''; }
+  function bMsg(t, k) { if (!ui) return; ui.msg.className = 'stbk-msg ' + (k || ''); ui.msg.textContent = t || ''; }
+
+  function kind() {
+    if (choice) return 'choice';
+    if (syncing) return 'syncing';
+    if (lastError) return 'error';
+    if (pendingCount()) return 'pending';
+    return 'ok';
+  }
+  function render() {
+    if (!ui) return;
+    var logged = !!S.session, k = kind();
+    ui.out.style.display = logged ? 'none' : 'block';
+    ui.inn.style.display = logged ? 'block' : 'none';
+    ui.dot.style.display = logged ? 'block' : 'none';
+    ui.dot.className = 'k-' + k;
+    ui.choiceBox.classList.toggle('open', !!choice);
+    if (logged) {
+      ui.user.textContent = S.session.user.email;
+      var t = { choice: 'Aguardando a sua escolha abaixo.', syncing: 'Sincronizando…', error: 'Falha ao sincronizar: ' + lastError, pending: 'Alterações aguardando envio…', ok: S.lastSync ? 'Sincronizado às ' + hhmm(S.lastSync) : 'Conectado.' }[k];
+      ui.status.textContent = t; ui.status.className = 'k-' + k;
+      ui.now.disabled = syncing || !!choice;
+    }
+    if (choice) {
+      ui.choiceText.textContent = 'A nuvem já tem dados (' + choice.rows.length + ' ite' + (choice.rows.length === 1 ? 'm' : 'ns') + ') diferentes dos deste aparelho. Qual versão você quer manter? A outra será substituída. Se tiver dúvida, cancele, exporte um backup e tente de novo.';
+    }
+  }
+  function openPanel(open) {
+    if (!ui) return;
+    ui.panel.classList.toggle('open', open);
+    ui.btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (!open) { closeConfirm(); bMsg(''); if (!lastError) sMsg(''); }
+  }
+  var pendingImport = null;
+  function closeConfirm() { pendingImport = null; if (ui) ui.confirmBox.classList.remove('open'); }
+
+  function download(text, name) {
+    var blob = new Blob([text], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
+    bMsg('Backup exportado: ' + name, 'ok');
+  }
+
+  async function doAuth(mode) {
+    var email = ui.mail.value.trim().toLowerCase(), pass = ui.pass.value;
+    if (!email || email.indexOf('@') < 1) { sMsg('Digite um e-mail válido.', 'err'); return; }
+    if (pass.length < 6) { sMsg('A senha precisa ter pelo menos 6 caracteres.', 'err'); return; }
+    ui.login.disabled = ui.signup.disabled = true; sMsg('Aguarde…', '');
+    try {
+      var j = await authPost(mode === 'signup' ? '/auth/v1/signup' : '/auth/v1/token?grant_type=password', { email: email, password: pass });
+      if (!j.access_token) { sMsg('Conta criada. Confirme o e-mail que enviamos e depois toque em “Entrar”.', 'warn'); }
+      else {
+        setSession(j); ui.pass.value = ''; sMsg('', ''); lastError = null; render();
+        runSync('login');
+      }
+    } catch (e) {
+      var m = e.message || 'Erro';
+      if (/failed to fetch|networkerror|load failed/i.test(m)) m = 'Sem conexão com a internet.';
+      sMsg(m, 'err');
+    }
+    ui.login.disabled = ui.signup.disabled = false;
+  }
+  function logout() {
+    var tok = S.session && S.session.access_token;
+    if (tok) { try { fetch(SB_URL + '/auth/v1/logout', { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + tok } }).catch(function () {}); } catch (e) {} }
+    S.session = null; S.uid = null; S.base = {}; S.dirty = {}; S.lastSync = 0; save();
+    choice = null; lastError = null; clearTimeout(timer); render(); sMsg('Você saiu. Os dados continuam salvos neste aparelho.', 'ok');
+  }
+
+  function init() {
+    var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+    var wrap = document.createElement('div'); wrap.innerHTML = html; document.body.appendChild(wrap);
+    ui = {
+      btn: $('stbk-btn'), dot: $('stbk-dot'), panel: $('stbk-panel'),
+      out: $('stbk-out'), inn: $('stbk-in'), user: $('stbk-user'), status: $('stbk-status'),
+      mail: $('stbk-mail'), pass: $('stbk-pass'), login: $('stbk-login'), signup: $('stbk-signup'),
+      now: $('stbk-now'), smsg: $('stbk-smsg'), msg: $('stbk-msg'),
+      choiceBox: $('stbk-choice'), choiceText: $('stbk-choice-text'),
+      file: $('stbk-file'), confirmBox: $('stbk-confirm'), confirmText: $('stbk-confirm-text')
+    };
+
+    ui.btn.addEventListener('click', function (e) { e.stopPropagation(); openPanel(!ui.panel.classList.contains('open')); });
+    document.addEventListener('click', function (e) {
+      if (!e.isTrusted) return;
+      if (ui.panel.classList.contains('open') && !ui.panel.contains(e.target) && !ui.btn.contains(e.target)) openPanel(false);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && ui.panel.classList.contains('open')) { openPanel(false); ui.btn.focus(); }
+    });
+
+    $('stbk-form').addEventListener('submit', function (e) { e.preventDefault(); doAuth('login'); });
+    ui.signup.addEventListener('click', function () { doAuth('signup'); });
+    ui.now.addEventListener('click', function () { sMsg(''); runSync('manual'); });
+    $('stbk-logout').addEventListener('click', logout);
+    $('stbk-use-cloud').addEventListener('click', chooseCloud);
+    $('stbk-use-local').addEventListener('click', chooseLocal);
+    $('stbk-choice-cancel').addEventListener('click', logout);
+
+    /* Backup: exportar */
+    $('stbk-exp').addEventListener('click', function () {
+      closeConfirm();
+      var data = localMap(), ks = Object.keys(data);
+      if (!ks.length) { bMsg('Ainda não há dados para exportar.', 'warn'); return; }
+      var text = JSON.stringify({ app: 'skilltree', version: 1, exportedAt: new Date().toISOString(), data: data });
+      var name = 'skilltree-backup-' + stamp() + '.json', file = null;
+      try { file = new File([text], name, { type: 'application/json' }); } catch (e) {}
+      var coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+      if (file && coarse && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: 'Backup Skill Tree' })
+          .then(function () { bMsg('Backup exportado.', 'ok'); })
+          .catch(function (err) { if (!err || err.name !== 'AbortError') download(text, name); });
+        return;
+      }
+      download(text, name);
+    });
+    /* Backup: importar */
+    $('stbk-imp').addEventListener('click', function () { closeConfirm(); bMsg(''); ui.file.value = ''; ui.file.click(); });
+    ui.file.addEventListener('change', function () {
+      var f = ui.file.files && ui.file.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onerror = function () { bMsg('Não consegui ler o arquivo.', 'err'); };
+      reader.onload = function () {
+        var obj; try { obj = JSON.parse(String(reader.result)); } catch (e) { obj = null; }
+        if (!obj || obj.app !== 'skilltree' || !obj.data || typeof obj.data !== 'object') { bMsg('Arquivo inválido. Use um backup exportado por este app.', 'err'); return; }
+        var entries = {}, n = 0;
+        Object.keys(obj.data).forEach(function (k) { if (k.indexOf(PREFIX) === 0 && typeof obj.data[k] === 'string') { entries[k] = obj.data[k]; n++; } });
+        if (!n) { bMsg('O backup não contém dados válidos.', 'err'); return; }
+        pendingImport = entries;
+        var when = '';
+        if (obj.exportedAt) { var d = new Date(obj.exportedAt); if (!isNaN(d)) when = ' de ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(); }
+        ui.confirmText.textContent = 'Backup' + when + ' com ' + n + ' ite' + (n === 1 ? 'm' : 'ns') + '. Isso substitui todos os dados deste aparelho' + (S.session ? ' (e, com a sincronização ligada, também os da nuvem)' : '') + '. Exporte antes se quiser guardar os atuais.';
+        ui.confirmBox.classList.add('open');
+      };
+      reader.readAsText(f);
+    });
+    $('stbk-cancel').addEventListener('click', function () { closeConfirm(); bMsg(''); });
+    $('stbk-ok').addEventListener('click', function () {
+      if (!pendingImport) return;
+      var entries = pendingImport, old = localMap();
+      try {
+        Object.keys(old).forEach(function (k) { ls.removeItem(k); });
+        Object.keys(entries).forEach(function (k) { ls.setItem(k, entries[k]); });
+      } catch (e) {
+        try {
+          Object.keys(localMap()).forEach(function (k) { ls.removeItem(k); });
+          Object.keys(old).forEach(function (k) { rawSet.call(ls, k, old[k]); });
+        } catch (e2) {}
+        closeConfirm(); bMsg('Não foi possível importar (armazenamento cheio). Nada foi alterado.', 'err'); return;
+      }
+      closeConfirm(); bMsg('Backup importado. Recarregando…', 'ok');
+      save(); reloading = true;
+      setTimeout(function () { location.reload(); }, 700);
+    });
+
+    /* Gatilhos de sincronizacao */
+    ['pointerdown', 'keydown', 'input', 'touchstart'].forEach(function (ev) {
+      document.addEventListener(ev, function () { lastAct = Date.now(); }, { capture: true, passive: true });
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') runSync('visible');
+      else if (pendingCount()) runSync('hide');
+    });
+    window.addEventListener('online', function () { runSync('online'); });
+    setInterval(function () { if (document.visibilityState === 'visible') runSync('poll'); }, 45000);
+
+    render();
+    if (S.session) setTimeout(function () { runSync('start'); }, 600);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
 </head>
 <body>
 <div id="root"></div>
@@ -377,191 +880,5 @@ lucide-react/dist/esm/lucide-react.mjs:
    *)
 */
 </script>
-<!-- Backup: exportar / importar dados (localStorage) -->
-<script>
-(function () {
-  var PREFIX = 'skilltree-';
-  var ls;
-  try { ls = window.localStorage; ls.length; } catch (e) { ls = null; }
-
-  var css =
-    '#stbk-btn{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:44px;height:44px;border-radius:50%;' +
-    'background:#0b0b0e;border:1px solid rgba(34,211,238,.55);color:#22d3ee;display:flex;align-items:center;justify-content:center;' +
-    'cursor:pointer;box-shadow:0 0 14px rgba(34,211,238,.25);padding:0;transition:box-shadow .2s,transform .2s}' +
-    '#stbk-btn:hover,#stbk-btn:focus-visible{box-shadow:0 0 20px rgba(34,211,238,.5);transform:translateY(-1px);outline:none}' +
-    '#stbk-btn svg{width:20px;height:20px}' +
-    '#stbk-panel{position:fixed;right:16px;bottom:70px;z-index:2147483000;width:min(320px,calc(100vw - 32px));' +
-    'background:#0b0b0e;border:1px solid rgba(34,211,238,.4);border-radius:10px;padding:16px;color:#e5e7eb;' +
-    'font-family:Rajdhani,system-ui,sans-serif;font-size:15px;line-height:1.35;box-shadow:0 10px 40px rgba(0,0,0,.6);display:none}' +
-    '#stbk-panel.open{display:block}' +
-    '#stbk-panel h2{margin:0 0 6px;font-family:Orbitron,Rajdhani,sans-serif;font-size:13px;letter-spacing:.14em;color:#22d3ee;font-weight:700}' +
-    '#stbk-panel p{margin:0 0 12px;color:#9ca3af}' +
-    '#stbk-panel .stbk-row{display:flex;gap:8px}' +
-    '#stbk-panel button.stbk-a{flex:1;cursor:pointer;font:600 15px Rajdhani,system-ui,sans-serif;letter-spacing:.04em;padding:10px 8px;border-radius:6px;' +
-    'background:transparent;min-height:42px}' +
-    '#stbk-panel button.stbk-a:focus-visible{outline:2px solid #facc15;outline-offset:2px}' +
-    '#stbk-exp{border:1px solid #22d3ee;color:#22d3ee}#stbk-exp:hover{background:rgba(34,211,238,.12)}' +
-    '#stbk-imp,#stbk-ok{border:1px solid #ef4444;color:#ef4444}#stbk-imp:hover,#stbk-ok:hover{background:rgba(239,68,68,.12)}' +
-    '#stbk-cancel{border:1px solid #4b5563;color:#d1d5db}#stbk-cancel:hover{background:rgba(255,255,255,.06)}' +
-    '#stbk-msg{margin-top:12px;min-height:0;font-size:14px}' +
-    '#stbk-msg.ok{color:#4ade80}#stbk-msg.err{color:#f87171}#stbk-msg.warn{color:#facc15}' +
-    '#stbk-confirm{display:none;margin-top:12px;border-top:1px solid #1f2937;padding-top:12px}' +
-    '#stbk-confirm.open{display:block}#stbk-confirm p{color:#e5e7eb}' +
-    '@media print{#stbk-btn,#stbk-panel{display:none!important}}';
-
-  var st = document.createElement('style');
-  st.textContent = css;
-  document.head.appendChild(st);
-
-  var wrap = document.createElement('div');
-  wrap.innerHTML =
-    '<button id="stbk-btn" type="button" aria-label="Backup dos dados" aria-expanded="false" aria-controls="stbk-panel" title="Backup dos dados">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-      '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' +
-    '</button>' +
-    '<div id="stbk-panel" role="dialog" aria-label="Backup dos dados">' +
-      '<h2>BACKUP</h2>' +
-      '<p>Seus dados ficam salvos só neste aparelho. Exporte um arquivo para levar ao outro ou guardar uma cópia.</p>' +
-      '<div class="stbk-row">' +
-        '<button id="stbk-exp" class="stbk-a" type="button">Exportar</button>' +
-        '<button id="stbk-imp" class="stbk-a" type="button">Importar</button>' +
-      '</div>' +
-      '<input id="stbk-file" type="file" accept=".json,application/json" hidden>' +
-      '<div id="stbk-confirm">' +
-        '<p id="stbk-confirm-text"></p>' +
-        '<div class="stbk-row">' +
-          '<button id="stbk-ok" class="stbk-a" type="button">Substituir</button>' +
-          '<button id="stbk-cancel" class="stbk-a" type="button">Cancelar</button>' +
-        '</div>' +
-      '</div>' +
-      '<div id="stbk-msg" role="status" aria-live="polite"></div>' +
-    '</div>';
-  document.body.appendChild(wrap);
-
-  var $ = function (id) { return document.getElementById(id); };
-  var btn = $('stbk-btn'), panel = $('stbk-panel'), msg = $('stbk-msg'),
-      fileIn = $('stbk-file'), confirmBox = $('stbk-confirm'), confirmText = $('stbk-confirm-text');
-  var pending = null;
-
-  function say(text, kind) { msg.className = kind || ''; msg.textContent = text || ''; }
-  function keys() {
-    var out = [];
-    if (!ls) return out;
-    for (var i = 0; i < ls.length; i++) {
-      var k = ls.key(i);
-      if (k && k.indexOf(PREFIX) === 0) out.push(k);
-    }
-    return out;
-  }
-  function pad(n) { return (n < 10 ? '0' : '') + n; }
-  function stamp() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-
-  function setOpen(open) {
-    panel.classList.toggle('open', open);
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (!open) { closeConfirm(); say(''); }
-  }
-  function closeConfirm() { pending = null; confirmBox.classList.remove('open'); }
-
-  btn.addEventListener('click', function (e) { e.stopPropagation(); setOpen(!panel.classList.contains('open')); });
-  document.addEventListener('click', function (e) {
-    if (!e.isTrusted) return; // ignora o clique programatico do link de download
-    if (panel.classList.contains('open') && !panel.contains(e.target) && !btn.contains(e.target)) setOpen(false);
-  });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && panel.classList.contains('open')) { setOpen(false); btn.focus(); }
-  });
-
-  function download(text, name) {
-    var blob = new Blob([text], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url; a.download = name; a.style.display = 'none';
-    document.body.appendChild(a); a.click();
-    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
-    say('Backup exportado: ' + name, 'ok');
-  }
-
-  $('stbk-exp').addEventListener('click', function () {
-    closeConfirm();
-    if (!ls) { say('Este navegador bloqueou o armazenamento local.', 'err'); return; }
-    var data = {}, ks = keys();
-    ks.forEach(function (k) { data[k] = ls.getItem(k); });
-    if (!ks.length) { say('Ainda não há dados para exportar.', 'warn'); return; }
-    var text = JSON.stringify({ app: 'skilltree', version: 1, exportedAt: new Date().toISOString(), data: data });
-    var name = 'skilltree-backup-' + stamp() + '.json';
-    var file = null;
-    try { file = new File([text], name, { type: 'application/json' }); } catch (e) {}
-    var coarse = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
-    if (file && coarse && navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file], title: 'Backup Skill Tree' })
-        .then(function () { say('Backup exportado.', 'ok'); })
-        .catch(function (err) { if (!err || err.name !== 'AbortError') download(text, name); });
-      return;
-    }
-    download(text, name);
-  });
-
-  $('stbk-imp').addEventListener('click', function () {
-    closeConfirm(); say('');
-    if (!ls) { say('Este navegador bloqueou o armazenamento local.', 'err'); return; }
-    fileIn.value = '';
-    fileIn.click();
-  });
-
-  fileIn.addEventListener('change', function () {
-    var f = fileIn.files && fileIn.files[0];
-    if (!f) return;
-    var reader = new FileReader();
-    reader.onerror = function () { say('Não consegui ler o arquivo.', 'err'); };
-    reader.onload = function () {
-      var obj;
-      try { obj = JSON.parse(String(reader.result)); } catch (e) { obj = null; }
-      if (!obj || obj.app !== 'skilltree' || !obj.data || typeof obj.data !== 'object') {
-        say('Arquivo inválido. Use um backup exportado por este app.', 'err'); return;
-      }
-      var entries = {}, n = 0;
-      Object.keys(obj.data).forEach(function (k) {
-        if (k.indexOf(PREFIX) === 0 && typeof obj.data[k] === 'string') { entries[k] = obj.data[k]; n++; }
-      });
-      if (!n) { say('O backup não contém dados válidos.', 'err'); return; }
-      pending = entries;
-      var when = '';
-      if (obj.exportedAt) {
-        var d = new Date(obj.exportedAt);
-        if (!isNaN(d)) when = ' de ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear();
-      }
-      confirmText.textContent = 'Backup' + when + ' com ' + n + ' ite' + (n === 1 ? 'm' : 'ns') +
-        '. Isso substitui todos os dados deste aparelho. Exporte antes se quiser guardar os atuais.';
-      confirmBox.classList.add('open');
-    };
-    reader.readAsText(f);
-  });
-
-  $('stbk-cancel').addEventListener('click', function () { closeConfirm(); say(''); });
-
-  $('stbk-ok').addEventListener('click', function () {
-    if (!pending) return;
-    var entries = pending, old = {};
-    keys().forEach(function (k) { old[k] = ls.getItem(k); });
-    try {
-      Object.keys(old).forEach(function (k) { ls.removeItem(k); });
-      Object.keys(entries).forEach(function (k) { ls.setItem(k, entries[k]); });
-    } catch (e) {
-      try {
-        keys().forEach(function (k) { ls.removeItem(k); });
-        Object.keys(old).forEach(function (k) { ls.setItem(k, old[k]); });
-      } catch (e2) {}
-      closeConfirm();
-      say('Não foi possível importar (armazenamento cheio). Nada foi alterado.', 'err');
-      return;
-    }
-    closeConfirm();
-    say('Backup importado. Recarregando…', 'ok');
-    setTimeout(function () { location.reload(); }, 700);
-  });
-})();
-</script>
-
 </body>
 </html>
