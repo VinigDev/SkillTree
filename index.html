@@ -975,13 +975,16 @@ function rie() {
     return {};
   }
 }
-var r2 = { money: 0, status: { qi: "", peso: "", altura: "", idade: "", sexo: "M", bf: "" } };
+var r2 = { money: 0, status: { qi: "", peso: "", pesoAlvo: "", pesoBase: "", altura: "", idade: "", sexo: "M", bf: "" } };
 function nie() {
   try {
     let e = localStorage.getItem(k8);
     if (!e) return r2;
     let t = JSON.parse(e);
-    return { money: Math.max(0, Math.floor(Number(t.money)) || 0), status: { ...r2.status, ...(t.status || {}) } };
+    return {
+      money: Math.max(0, Math.floor(Number(t.money)) || 0),
+      status: { ...r2.status, ...(t.status && typeof t.status == "object" ? t.status : {}) },
+    };
   } catch {
     return r2;
   }
@@ -2027,10 +2030,30 @@ var J8 = [
   { k: "qi", label: "QI", unit: "pts", min: 0, max: 300, step: 1 },
   { k: "idade", label: "Idade", unit: "anos", min: 0, max: 130, step: 1 },
   { k: "peso", label: "Peso", unit: "kg", min: 0, max: 500, step: 0.1 },
+  { k: "pesoAlvo", label: "Peso alvo", unit: "kg", min: 0, max: 500, step: 0.1 },
   { k: "altura", label: "Altura", unit: "cm", min: 0, max: 260, step: 1 },
   { k: "bf", label: "BF \xB7 gordura", unit: "%", min: 0, max: 80, step: 0.1, ro: !0 },
 ];
+// Diferença entre peso atual e peso alvo. "pesoBase" = peso quando a meta foi definida (dá a direção: cortar ou ganhar).
+function pesoGap(e) {
+  let p = parseFloat(String(e.peso).replace(",", ".")),
+    a = parseFloat(String(e.pesoAlvo).replace(",", ".")),
+    b = parseFloat(String(e.pesoBase).replace(",", "."));
+  if (!(p > 0) || !(a > 0)) return null;
+  let d = a - p,
+    fm = (x) => `${Math.abs(x).toFixed(1).replace(".", ",")} kg`;
+  if (Math.abs(d) < 0.05) return { text: "Meta atingida", tone: "ok" };
+  let dir = b > 0 && Math.abs(a - b) >= 0.05 ? Math.sign(a - b) : 0,
+    rem = dir ? d * dir : Math.abs(d);
+  return rem > 0 ? { text: `Faltam ${fm(rem)}`, tone: "todo" } : { text: `Passou ${fm(rem)}`, tone: "over" };
+}
+var PG_CLS = {
+  ok: "border-cyan-400/60 bg-cyan-400/10 text-cyan-300",
+  todo: "border-yellow-500/60 bg-yellow-400/10 text-yellow-300",
+  over: "border-red-500/70 bg-red-500/10 text-red-400",
+};
 function zie({ status: e, onChange: t, bf: a }) {
+  let pg = pesoGap(e);
   let r = parseFloat(e.peso),
     n = parseFloat(e.altura),
     o = r > 0 && n > 0 ? (r / (n / 100) ** 2).toFixed(1) : "\u2014";
@@ -2162,6 +2185,19 @@ function zie({ status: e, onChange: t, bf: a }) {
               (0, u.jsx)("span", { className: "font-orbit text-[15px] text-yellow-400", "data-imc": !0, children: o }),
             ],
           }),
+          pg &&
+            (0, u.jsxs)("div", {
+              className: `col-span-3 flex items-center justify-between border px-2 py-1.5 ${PG_CLS[pg.tone]}`,
+              "data-peso-gap": pg.tone,
+              role: "status",
+              children: [
+                (0, u.jsx)("span", {
+                  className: "text-[8.5px] font-semibold uppercase tracking-[0.18em] opacity-80",
+                  children: "Peso alvo",
+                }),
+                (0, u.jsx)("span", { className: "font-orbit text-[14px]", children: pg.text }),
+              ],
+            }),
         ],
       }),
     ],
@@ -2272,7 +2308,8 @@ function Hie({ open: e, onClose: t, status: a, onChange: r, bf: n }) {
     !e)
   )
     return null;
-  let o = parseFloat(a.peso),
+  let pg = pesoGap(a),
+    o = parseFloat(a.peso),
     i = parseFloat(a.altura),
     l = o > 0 && i > 0 ? (o / (i / 100) ** 2).toFixed(1) : "\u2014",
     s = (c) => {
@@ -2440,6 +2477,19 @@ function Hie({ open: e, onClose: t, status: a, onChange: r, bf: n }) {
               }),
             ],
           }),
+          pg &&
+            (0, u.jsxs)("div", {
+              className: `mx-6 mb-3 flex items-center justify-between border px-4 py-3 ${PG_CLS[pg.tone]}`,
+              "data-peso-gap-panel": pg.tone,
+              role: "status",
+              children: [
+                (0, u.jsx)("span", {
+                  className: "text-[11px] uppercase tracking-[0.2em] opacity-80",
+                  children: "Peso alvo",
+                }),
+                (0, u.jsx)("span", { className: "font-orbit text-xl", children: pg.text }),
+              ],
+            }),
           (0, u.jsxs)("div", {
             className: "mx-6 mb-5 px-4 py-3 border border-red-900/70 bg-black/30 flex items-center justify-between",
             children: [
@@ -8396,6 +8446,278 @@ function Nle({ plan: e, setPlan: t }) {
     ],
   });
 }
+// ===== Widget de contagem regressiva (objetivo/evento) — canto superior direito do HUB, à esquerda do botão de Sincronização =====
+var CD_KEY = "skilltree-countdown-v1",
+  cdTs = (e) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(e || "")) ? new Date(e).getTime() : NaN),
+  cdPad = (e) => String(e).padStart(2, "0");
+function cdLoad() {
+  try {
+    let e = localStorage.getItem(CD_KEY),
+      t = e ? JSON.parse(e) : null;
+    return {
+      name: t && typeof t.name == "string" ? t.name.slice(0, 40) : "",
+      date: t && Number.isFinite(cdTs(t.date)) ? String(t.date).slice(0, 16) : "",
+    };
+  } catch {
+    return { name: "", date: "" };
+  }
+}
+function cdParts(e) {
+  let t = Math.max(0, Math.floor(e / 1e3));
+  return { d: Math.floor(t / 86400), h: Math.floor((t % 86400) / 3600), m: Math.floor((t % 3600) / 60), s: t % 60 };
+}
+var cdText = (p) => `${p.d}d ${cdPad(p.h)}h ${cdPad(p.m)}m ${cdPad(p.s)}s`;
+function CountdownWidget() {
+  let j = u.jsx,
+    js = u.jsxs,
+    [countdownEvent, setCountdownEvent] = (0, K.useState)(cdLoad),
+    [open, setOpen] = (0, K.useState)(!1),
+    [now, setNow] = (0, K.useState)(() => Date.now()),
+    [draft, setDraft] = (0, K.useState)({ name: "", date: "" }),
+    [err, setErr] = (0, K.useState)(""),
+    [top, setTop] = (0, K.useState)(120),
+    box = (0, K.useRef)(null),
+    btn = (0, K.useRef)(null),
+    target = cdTs(countdownEvent.date),
+    has = Number.isFinite(target),
+    diff = has ? target - now : 0,
+    expired = has && diff <= 0,
+    urgent = has && !expired && diff < 864e5,
+    parts = cdParts(diff);
+  // persistência local (também entra no backup e na sincronização, pois usa o prefixo "skilltree-")
+  (0, K.useEffect)(() => {
+    try {
+      if (!countdownEvent.name && !countdownEvent.date && localStorage.getItem(CD_KEY) === null) return;
+      localStorage.setItem(CD_KEY, JSON.stringify(countdownEvent));
+    } catch {}
+  }, [countdownEvent]);
+  // relógio: 1 tick por segundo enquanto houver evento futuro; limpa o intervalo ao desmontar/trocar a data/expirar
+  (0, K.useEffect)(() => {
+    let t = cdTs(countdownEvent.date);
+    if (!Number.isFinite(t)) return;
+    setNow(Date.now());
+    if (t <= Date.now()) return;
+    let id = setInterval(() => {
+      let n = Date.now();
+      (setNow(n), n >= t && clearInterval(id));
+    }, 1e3);
+    return () => clearInterval(id);
+  }, [countdownEvent.date]);
+  let place = () => {
+      let r = box.current && box.current.getBoundingClientRect();
+      r && setTop(Math.round(r.bottom + 8));
+    },
+    openPop = () => {
+      (setDraft({ name: countdownEvent.name, date: countdownEvent.date }), setErr(""), place(), setOpen(!0));
+    },
+    close = () => setOpen(!1);
+  (0, K.useEffect)(() => {
+    if (!open) return;
+    let onDown = (e) => {
+        box.current && !box.current.contains(e.target) && setOpen(!1);
+      },
+      onKey = (e) => {
+        e.key === "Escape" && (setOpen(!1), btn.current && btn.current.focus());
+      };
+    return (
+      document.addEventListener("pointerdown", onDown),
+      document.addEventListener("keydown", onKey),
+      window.addEventListener("resize", place),
+      () => {
+        (document.removeEventListener("pointerdown", onDown),
+          document.removeEventListener("keydown", onKey),
+          window.removeEventListener("resize", place));
+      }
+    );
+  }, [open]);
+  let save = (e) => {
+      e && e.preventDefault();
+      if (!Number.isFinite(cdTs(draft.date))) return setErr("Informe a data e a hora do evento.");
+      (setCountdownEvent({ name: draft.name.trim().slice(0, 40), date: draft.date }), setOpen(!1));
+    },
+    clear = () => {
+      (setCountdownEvent({ name: "", date: "" }), setDraft({ name: "", date: "" }), setErr(""), setOpen(!1));
+    },
+    tone = !has
+      ? { b: "#7f1d1d", t: "text-red-300/80" }
+      : expired
+        ? { b: "#ef4444", t: "text-red-400" }
+        : urgent
+          ? { b: "#facc15", t: "text-yellow-300" }
+          : { b: "#22d3ee", t: "text-cyan-300" },
+    dTs = cdTs(draft.date),
+    preview = Number.isFinite(dTs) ? (dTs <= Date.now() ? "Essa data já passou" : `Faltam ${cdText(cdParts(dTs - now))}`) : "";
+  return js("div", {
+    ref: box,
+    className: "relative min-w-0",
+    "data-countdown": !0,
+    children: [
+      j("button", {
+        ref: btn,
+        type: "button",
+        onClick: () => (open ? close() : openPop()),
+        "aria-haspopup": "dialog",
+        "aria-expanded": open,
+        "aria-label": has ? "Contagem regressiva do objetivo (editar)" : "Definir objetivo com contagem regressiva",
+        title: has ? `${countdownEvent.name || "Objetivo"} · clique para editar` : "Definir objetivo com contagem regressiva",
+        className:
+          "group block max-w-[min(240px,calc(100vw-5.5rem))] transition-transform duration-150 hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
+        style: { clipPath: ot, background: tone.b, padding: 1.5 },
+        children: j("span", {
+          className: `flex h-[33px] items-center gap-2 bg-zinc-950 px-2.5 ${has ? "" : "border-dashed"} group-hover:bg-[#12080b]`,
+          style: { clipPath: ot },
+          children: has
+            ? js(u.Fragment, {
+                children: [
+                  j(xf, {
+                    size: 14,
+                    className: `shrink-0 ${expired ? "text-red-400" : urgent ? "text-yellow-300" : "text-cyan-300"}`,
+                  }),
+                  expired
+                    ? js("span", {
+                        className:
+                          "min-w-0 animate-pulse text-left font-mono text-[11px] font-bold uppercase leading-tight tracking-wider text-red-500 motion-reduce:animate-none",
+                        "data-countdown-expired": !0,
+                        role: "status",
+                        children: [
+                          j("span", { className: "block truncate text-[8.5px] text-red-400/90", children: countdownEvent.name || "Objetivo" }),
+                          "[ Evento expirado ]",
+                        ],
+                      })
+                    : js("span", {
+                        className: "min-w-0 text-left leading-none",
+                        children: [
+                          j("span", {
+                            className:
+                              "block truncate font-mono text-[8.5px] font-semibold uppercase tracking-[0.18em] text-yellow-400/90",
+                            "data-countdown-name": !0,
+                            children: countdownEvent.name || "Objetivo",
+                          }),
+                          j("span", {
+                            className: `mt-[3px] block whitespace-nowrap font-mono text-[12px] font-bold tracking-wide sm:text-[13px] ${tone.t}`,
+                            style: { textShadow: "0 0 8px currentColor" },
+                            "data-countdown-time": !0,
+                            children: cdText(parts),
+                          }),
+                        ],
+                      }),
+                ],
+              })
+            : js(u.Fragment, {
+                children: [
+                  j(xf, { size: 14, className: "shrink-0 text-red-400/80" }),
+                  j("span", {
+                    className: "whitespace-nowrap font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-red-300/80",
+                    children: "+ Objetivo",
+                  }),
+                ],
+              }),
+        }),
+      }),
+      open &&
+        j("form", {
+          onSubmit: save,
+          role: "dialog",
+          "aria-label": "Definir objetivo com contagem regressiva",
+          "data-countdown-pop": !0,
+          style: { "--cd-top": `${top}px` },
+          className:
+            "fixed inset-x-4 top-[var(--cd-top)] z-50 border-2 border-red-500 bg-[#12080b] p-4 normal-case tracking-normal shadow-[0_0_30px_rgba(239,68,68,.35)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[320px]",
+          children: js("div", {
+            className: "flex flex-col gap-3",
+            children: [
+              js("div", {
+                className: "flex items-start justify-between",
+                children: [
+                  js("div", {
+                    children: [
+                      j("div", { className: "text-[9px] tracking-[0.35em] text-red-500/80", children: "COUNTDOWN//OBJETIVO" }),
+                      j("h3", {
+                        className: "text-[15px] font-bold uppercase tracking-[0.15em] text-yellow-400",
+                        children: "Contagem regressiva",
+                      }),
+                    ],
+                  }),
+                  j("button", {
+                    type: "button",
+                    onClick: close,
+                    "aria-label": "Fechar",
+                    className: "p-1 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300",
+                    children: j(Da, { size: 18 }),
+                  }),
+                ],
+              }),
+              js("label", {
+                className: "block",
+                children: [
+                  j("span", {
+                    className: "mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-300",
+                    children: "Nome do objetivo / evento",
+                  }),
+                  j("input", {
+                    type: "text",
+                    maxLength: 40,
+                    autoFocus: !0,
+                    "aria-label": "Nome do objetivo ou evento",
+                    value: draft.name,
+                    placeholder: "Ex.: Mestrado, Casamento, Prova",
+                    onChange: (e) => setDraft((t) => ({ ...t, name: e.target.value })),
+                    className:
+                      "w-full border border-red-800 bg-[#0a0507] px-3 py-2 text-[14px] text-cyan-200 placeholder-red-900 transition-colors focus:border-cyan-400 focus:outline-none",
+                  }),
+                ],
+              }),
+              js("label", {
+                className: "block",
+                children: [
+                  j("span", {
+                    className: "mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-300",
+                    children: "Data e hora do evento",
+                  }),
+                  j("input", {
+                    type: "datetime-local",
+                    "aria-label": "Data e hora do evento",
+                    value: draft.date,
+                    onChange: (e) => (setDraft((t) => ({ ...t, date: e.target.value })), setErr("")),
+                    className:
+                      "w-full border border-red-800 bg-[#0a0507] px-3 py-2 font-mono text-[14px] text-cyan-200 transition-colors [color-scheme:dark] focus:border-cyan-400 focus:outline-none",
+                  }),
+                ],
+              }),
+              err
+                ? j("div", { role: "alert", className: "text-[12px] text-red-400", children: err })
+                : preview
+                  ? j("div", {
+                      className: `font-mono text-[12px] ${dTs <= Date.now() ? "text-red-400" : "text-yellow-300"}`,
+                      children: preview,
+                    })
+                  : null,
+              js("div", {
+                className: "flex items-center justify-between gap-2 pt-1",
+                children: [
+                  j("button", {
+                    type: "button",
+                    onClick: clear,
+                    className:
+                      "border border-red-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-widest text-red-400 transition-colors hover:bg-[#3b0f14] hover:text-red-200",
+                    children: "Limpar",
+                  }),
+                  j("button", {
+                    type: "submit",
+                    className:
+                      "bg-yellow-400 px-4 py-2 text-[12px] font-bold uppercase tracking-widest text-black transition-colors hover:bg-yellow-300",
+                    style: { clipPath: ot },
+                    children: "Salvar",
+                  }),
+                ],
+              }),
+            ],
+          }),
+        }),
+    ],
+  });
+}
+
 // Ponto de montagem do bot\xE3o de Sincroniza\xE7\xE3o/Backup (o motor fica no script do <head>).
 // Ao desmontar (sair do hub), o bot\xE3o e o painel somem: n\xE3o ficam mais flutuando nas outras abas.
 function StbkSlot() {
@@ -8455,6 +8777,18 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
         localStorage.setItem(k8, JSON.stringify(B));
       } catch {}
     }, [B]),
+    // define o peso-base da meta (direção cortar/ganhar) quando peso e alvo existem mas a base ainda não
+    (0, K.useEffect)(() => {
+      let st = B.status,
+        p = parseFloat(String(st.peso).replace(",", ".")),
+        al = parseFloat(String(st.pesoAlvo).replace(",", "."));
+      if (!(p > 0) || !(al > 0) || parseFloat(String(st.pesoBase).replace(",", ".")) > 0) return;
+      let tm = setTimeout(
+        () => z((o) => ({ ...o, status: { ...o.status, pesoBase: o.status.pesoBase ? o.status.pesoBase : String(o.status.peso) } })),
+        1500,
+      );
+      return () => clearTimeout(tm);
+    }, [B.status.peso, B.status.pesoAlvo, B.status.pesoBase]),
     (0, K.useEffect)(() => {
       try {
         localStorage.setItem(
@@ -8756,7 +9090,18 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
         l("hub"),
         lt(`Categoria exclu\xEDda: ${J.short}`, "ok"));
     },
-    v2 = ($, J) => z((oe) => ({ ...oe, status: { ...oe.status, [$]: J } })),
+    v2 = ($, J) =>
+      z((oe) => ({
+        ...oe,
+        status: {
+          ...oe.status,
+          [$]: J,
+          // ao (re)definir a meta, guarda o peso do momento como ponto de partida
+          ...($ === "pesoAlvo"
+            ? { pesoBase: parseFloat(String(oe.status.peso).replace(",", ".")) > 0 ? String(oe.status.peso) : "" }
+            : {}),
+        },
+      })),
     b2 = ($) => z((J) => ({ ...J, money: $ })),
     Pr = Nt && nr[Nt.name],
     Ar;
@@ -8884,20 +9229,23 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
           }),
           (0, u.jsx)("div", {
             className:
-              "order-3 flex w-full min-w-0 justify-center xl:order-none xl:w-auto xl:flex-1 2xl:absolute 2xl:left-1/2 2xl:top-4 2xl:w-auto 2xl:-translate-x-1/2",
+              "order-3 flex w-full min-w-0 justify-center xl:order-none xl:w-auto xl:flex-1 min-[1800px]:absolute min-[1800px]:left-1/2 min-[1800px]:top-4 min-[1800px]:w-auto min-[1800px]:-translate-x-1/2",
             children: (0, u.jsx)(dle, { tab: n, onTab: lR }),
           }),
           (0, u.jsxs)("div", {
-            className: "flex shrink-0 items-center gap-3 pt-1 text-[12px] uppercase tracking-[0.2em] text-cyan-300",
+            className:
+              "ml-auto flex max-w-full shrink-0 items-center justify-end gap-2 pt-1 text-[12px] uppercase tracking-[0.2em] text-cyan-300 sm:gap-3",
             children: [
               (0, u.jsxs)("div", {
-                className: "hidden items-center gap-2 sm:flex",
+                className: "hidden items-center gap-2 min-[1800px]:flex",
                 children: [
                   (0, u.jsx)("span", { className: "inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" }),
                   (0, u.jsxs)("span", { children: ["N\xEDvel ", ws] }),
                 ],
               }),
               // Sincroniza\xE7\xE3o/Backup: s\xF3 existem no HUB principal (canto superior direito, ao lado do N\xEDvel)
+              // Contagem regressiva: logo à esquerda do botão de Sincronização (só no HUB)
+              Ir && i === "hub" && (0, u.jsx)(CountdownWidget, {}),
               Ir && i === "hub" && (0, u.jsx)(StbkSlot, {}),
             ],
           }),
