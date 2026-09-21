@@ -1322,11 +1322,18 @@ Sugest\xE3o de semana: Seg A \xB7 Ter B \xB7 Qui C \xB7 Sex D (+ E ombros quando
     },
   ],
   s8 = { pescoco: "", peito: "", cintura: "", quadril: "", biceps: "", antebraco: "", coxa: "", gemeos: "" };
+var M0c = null;
 function M0() {
+  // resultado em cache: os vários useState(() => M0()...) precisam dos MESMOS ids migrados
+  if (M0c) return M0c;
   let e = { ...N8 },
     t = E8.map((n) => ({ ...n })),
     a = { ...s8 },
-    r = [];
+    r = [],
+    dz = null,
+    da = "",
+    tr = null,
+    om = null;
   try {
     let n = localStorage.getItem(T8);
     if (n) {
@@ -1357,7 +1364,6 @@ function M0() {
     }
     // CORREÇÃO: as medidas corporais nunca eram lidas de volta (referência a variável inexistente),
     // então o efeito de gravação sobrescrevia tudo com valores vazios a cada recarga.
-    let om = null;
     try {
       om = n ? JSON.parse(n) : null;
     } catch {
@@ -1369,8 +1375,16 @@ function M0() {
       Object.keys(s8).forEach((k) => {
         om.measures[k] !== void 0 && om.measures[k] !== null && (a[k] = String(om.measures[k]).slice(0, 6));
       });
+    om && ((dz = cleanDiets(om.diets2)), (da = typeof om.dietActive == "string" ? om.dietActive : ""), (tr = cleanTrain(om.train2)));
   } catch {}
-  return { w: e, d: t, logs: r, measures: a };
+  (dz || (dz = [dietFromLegacy(t)]),
+    dz.some((x) => x.id === da) || (da = dz[0].id),
+    tr ||
+      ((tr = {}),
+      kd.forEach(({ id }) => {
+        tr[id] = parseWorkout(e[id]);
+      })));
+  return (M0c = { w: e, d: t, logs: r, measures: a, diets: dz, dietActive: da, train: tr });
 }
 var iie = () => {
     let e = new Date(),
@@ -3045,7 +3059,7 @@ function Kie({ activePart: e, panelType: t, onPanel: a, measures: r, onMeasure: 
     ],
   });
 }
-function U0({ onClose: e, title: t, code: a, icon: r, sub: n, children: o, label: i }) {
+function U0({ onClose: e, title: t, code: a, icon: r, sub: n, children: o, label: i, wide: wd }) {
   return (
     (0, K.useEffect)(() => {
       let l = (s) => {
@@ -3066,7 +3080,7 @@ function U0({ onClose: e, title: t, code: a, icon: r, sub: n, children: o, label
         }),
         (0, u.jsxs)("aside", {
           className:
-            "drawer-in relative flex h-full w-[520px] max-w-full flex-col border-l-2 border-red-500 bg-[#12080b] shadow-[0_0_40px_rgba(239,68,68,.35)]",
+            `drawer-in relative flex h-full ${wd ? "w-[780px]" : "w-[520px]"} max-w-full flex-col border-l-2 border-red-500 bg-[#12080b] shadow-[0_0_40px_rgba(239,68,68,.35)]`,
           children: [
             (0, u.jsxs)("div", {
               className: "flex items-start justify-between border-b border-red-900/70 px-6 pb-4 pt-5",
@@ -3109,189 +3123,802 @@ function ga({ children: e }) {
 }
 var ya =
   "block w-full bg-transparent px-3 py-2 text-[15px] text-cyan-100 placeholder-red-900 focus:outline-none [color-scheme:dark]";
-function Yie({ part: e, workouts: t, onChange: a, onSwitch: r, onClose: n }) {
+// ===== SAÚDE · modelos de dados de DIETA (macros) e TREINO (exercícios estruturados) =====
+// Dieta:  { id, name, goals: { c, p, f }, meals: [{ id, time, name, note, items: [{ id, name, qty, c, p, f }] }] }
+// Treino: { [grupo]: { ex: [{ id, name, sets, reps, tech, pr }], note } }
+// Valores numéricos ficam como texto (aceitam vírgula) e são convertidos só nos cálculos.
+var MEAL_NAMES = ["Caf\xE9 da manh\xE3", "Lanche da manh\xE3", "Almo\xE7o", "Pr\xE9-treino", "Jantar"],
+  // [nome, qtd (g), carboidratos, proteínas, gorduras] · valores aproximados (TACO) da dieta padrão
+  DIET_DEF_ITEMS = [
+    [
+      ["Ovos inteiros (3 un.)", 150, 1.5, 19, 14],
+      ["Claras (2 un.)", 66, 0.5, 7, 0],
+      ["Azeite", 5, 0, 0, 5],
+      ["P\xE3o integral", 30, 13, 3, 1],
+      ["Banana", 100, 23, 1, 0],
+    ],
+    [
+      ["Peito de frango", 120, 0, 38, 3],
+      ["Abacate", 100, 6, 2, 8],
+      ["Batata-doce cozida", 150, 28, 2, 0],
+    ],
+    [
+      ["Patinho grelhado", 150, 0, 48, 11],
+      ["Arroz cozido", 100, 28, 2.5, 0.2],
+      ["Feij\xE3o (1 concha)", 86, 12, 4, 0.5],
+      ["Azeite", 10, 0, 0, 10],
+      ["Salada", 100, 3, 1, 0],
+    ],
+    [
+      ["Frango grelhado", 100, 0, 32, 2.5],
+      ["Arroz cozido", 100, 28, 2.5, 0.2],
+      ["Banana", 100, 23, 1, 0],
+    ],
+    [
+      ["Til\xE1pia", 150, 0, 39, 4],
+      ["Legumes salteados", 150, 10, 2, 0],
+      ["Azeite", 10, 0, 0, 10],
+      ["Ovos cozidos (2 un.)", 100, 1, 13, 10],
+    ],
+  ],
+  mkFood = (a) => ({
+    id: Qe(),
+    name: a ? a[0] : "",
+    qty: a ? String(a[1]) : "",
+    c: a ? String(a[2]) : "",
+    p: a ? String(a[3]) : "",
+    f: a ? String(a[4]) : "",
+  }),
+  mkMeal = (i, x) => ({
+    id: Qe(),
+    time: (x && x.time) || (E8[i] ? E8[i].time : "12:00"),
+    name: (x && x.name) || MEAL_NAMES[i] || `Refei\xE7\xE3o ${i + 1}`,
+    note: (x && x.note) || "",
+    items: (x && x.items) || [],
+  }),
+  mkDiet = (name, filled) => ({
+    id: Qe(),
+    name,
+    goals: { c: "250", p: "180", f: "70" },
+    meals: E8.map((_, i) => mkMeal(i, filled ? { items: DIET_DEF_ITEMS[i].map(mkFood) } : null)),
+  }),
+  mnum = (v) => Math.max(0, ea(v)),
+  kcalOf = (t) => t.c * 4 + t.p * 4 + t.f * 9,
+  fmtG = (v) => (Math.round(v * 10) / 10).toLocaleString("pt-BR"),
+  mkEx = (x) => ({
+    id: Qe(),
+    name: (x && x.name) || "",
+    sets: (x && x.sets) || "",
+    reps: (x && x.reps) || "",
+    tech: (x && x.tech) || "",
+    pr: (x && x.pr) || "",
+  });
+function mealTotals(m) {
+  return m.items.reduce(
+    (t, it) => ({ c: t.c + mnum(it.c), p: t.p + mnum(it.p), f: t.f + mnum(it.f), q: t.q + mnum(it.qty) }),
+    { c: 0, p: 0, f: 0, q: 0 },
+  );
+}
+// Migração: dieta antiga (5 refeições em texto) -> dieta estruturada. Se o texto é o padrão, já vem com alimentos e macros;
+// se foi editado, o texto antigo vira a observação da refeição (nada se perde).
+function dietFromLegacy(d) {
+  let arr = Array.isArray(d) ? d : [],
+    isDef = arr.length === E8.length && arr.every((m, i) => m && m.text === E8[i].text);
+  return {
+    ...mkDiet("Dieta principal", isDef),
+    meals: (arr.length ? arr : E8).map((m, i) =>
+      mkMeal(i, {
+        time: m && /^\d{2}:\d{2}$/.test(m.time) ? m.time : void 0,
+        note: isDef ? "" : String((m && m.text) || "").slice(0, 300),
+        items: isDef && DIET_DEF_ITEMS[i] ? DIET_DEF_ITEMS[i].map(mkFood) : [],
+      }),
+    ),
+  };
+}
+function cleanDiets(arr) {
+  if (!Array.isArray(arr)) return null;
+  let ok = (x) => x && typeof x == "object",
+    ids = new Set(),
+    uid = (v) => {
+      let s = ge(v, 20);
+      return !s || ids.has(s) ? Qe() : (ids.add(s), s);
+    },
+    out = arr
+      .filter(ok)
+      .slice(0, 20)
+      .map((d) => ({
+        id: uid(d.id),
+        name: ge(d.name, 40) || "Dieta",
+        goals: {
+          c: ge(ok(d.goals) ? d.goals.c : "", 7),
+          p: ge(ok(d.goals) ? d.goals.p : "", 7),
+          f: ge(ok(d.goals) ? d.goals.f : "", 7),
+        },
+        meals: (Array.isArray(d.meals) ? d.meals : [])
+          .filter(ok)
+          .slice(0, 12)
+          .map((m) => ({
+            id: uid(m.id),
+            time: /^\d{2}:\d{2}$/.test(m.time) ? m.time : "",
+            name: ge(m.name, 40),
+            note: ge(m.note, 300),
+            items: (Array.isArray(m.items) ? m.items : [])
+              .filter(ok)
+              .slice(0, 40)
+              .map((it) => ({
+                id: uid(it.id),
+                name: ge(it.name, 60),
+                qty: ge(it.qty, 7),
+                c: ge(it.c, 7),
+                p: ge(it.p, 7),
+                f: ge(it.f, 7),
+              })),
+          })),
+      }));
+  return out.length ? out : null;
+}
+// Migração do treino em texto ("• Supino reto — 4x6-10") para exercícios estruturados
+function parseWorkout(txt) {
+  let ex = [],
+    notes = [];
+  String(txt || "")
+    .split(/\n/)
+    .forEach((ln, i) => {
+      let l = ln.trim();
+      if (!l) return;
+      let m = l.match(/^[•\-*\xB7]\s*(.+)$/);
+      if (!m) {
+        // 1ª linha em CAIXA ALTA = título ("TREINO A · PEITO"); qualquer outra linha solta vira observação
+        (i > 0 || l !== l.toUpperCase()) && notes.push(l);
+        return;
+      }
+      let body = m[1],
+        a = body.match(/^(.*?)\s+[—–-]\s+(\d+)\s*x\s*(.+)$/i),
+        b = body.match(/^(.*?)\s+[—–-]\s+(\d+)\s*s[\xE9e]ries?\s*$/i),
+        c = body.match(/^(.*?)\s+[—–-]\s+(.+)$/);
+      ex.push(
+        mkEx(
+          a
+            ? { name: a[1], sets: a[2], reps: a[3].trim() }
+            : b
+              ? { name: b[1], sets: b[2], reps: "at\xE9 a falha" }
+              : c
+                ? { name: c[1], reps: c[2].trim() }
+                : { name: body },
+        ),
+      );
+    });
+  return { ex: ex.slice(0, 40), note: notes.join(" \xB7 ").slice(0, 300) };
+}
+function cleanTrain(o) {
+  if (!o || typeof o != "object") return null;
+  let out = {};
+  return (
+    kd.forEach(({ id }) => {
+      let p = o[id] && typeof o[id] == "object" ? o[id] : {};
+      out[id] = {
+        ex: (Array.isArray(p.ex) ? p.ex : [])
+          .filter((x) => x && typeof x == "object")
+          .slice(0, 40)
+          .map((x) => ({
+            id: ge(x.id, 20) || Qe(),
+            name: ge(x.name, 60),
+            sets: ge(x.sets, 4),
+            reps: ge(x.reps, 20),
+            tech: ge(x.tech, 40),
+            pr: ge(x.pr, 20),
+          })),
+        note: ge(p.note, 300),
+      };
+    }),
+    out
+  );
+}
+
+// ---- peças visuais compartilhadas (dieta/treino) ----
+var HX = (t, p, ...c) => (c.length > 1 ? u.jsxs : u.jsx)(t, c.length ? { ...p, children: c.length > 1 ? c : c[0] } : p),
+  HINB =
+    "min-w-0 border border-red-900/80 bg-[#0a0507] px-2 py-1.5 text-[14px] text-cyan-100 placeholder-red-900 transition-colors focus:border-cyan-400 focus:outline-none [color-scheme:dark]",
+  HIN =
+    "w-full min-w-0 border border-red-900/80 bg-[#0a0507] px-2 py-1.5 text-[14px] text-cyan-100 placeholder-red-900 transition-colors focus:border-cyan-400 focus:outline-none [color-scheme:dark]",
+  HNUM = `${HIN} text-right font-orbit text-[13px]`,
+  HLBL = "mb-1 block text-[9.5px] font-semibold uppercase tracking-[0.18em] text-cyan-300/90",
+  numIn = (v) => String(v).replace(/[^\d.,]/g, "").slice(0, 7);
+function HBtn({ onClick, children, tone = "ghost", label, title, className = "" }) {
+  let t =
+    tone === "primary"
+      ? "border-yellow-400 bg-yellow-400 text-black hover:bg-yellow-300"
+      : tone === "danger"
+        ? "border-red-600 bg-red-600/15 text-red-300 hover:bg-red-600 hover:text-white"
+        : "border-red-800 bg-zinc-950 text-red-400 hover:bg-[#3b0f14] hover:text-red-200";
+  return HX(
+    "button",
+    {
+      type: "button",
+      onClick,
+      "aria-label": label,
+      title: title || label,
+      className: `flex items-center justify-center gap-1.5 border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${t} ${className}`,
+    },
+    children,
+  );
+}
+// Barra "consumido x meta": ciano até 90%, amarelo na faixa ideal (90–110%), vermelho acima de 110%
+function MacroStat({ label, value, goal, unit, k }) {
+  let pct = goal > 0 ? (value / goal) * 100 : 0,
+    col = !goal ? "#67e8f9" : pct > 110 ? "#ef4444" : pct >= 90 ? "#facc15" : "#22d3ee",
+    diff = goal - value,
+    msg = !goal
+      ? "sem meta"
+      : Math.abs(diff) < 0.5
+        ? "meta batida"
+        : diff > 0
+          ? `faltam ${fmtG(diff)} ${unit}`
+          : `+${fmtG(-diff)} ${unit} acima`;
+  return HX(
+    "div",
+    { className: "min-w-0 border border-red-900/70 bg-black/50 px-2.5 py-2", "data-macro": k },
+    HX("div", { className: "text-[9px] font-semibold uppercase tracking-[0.2em] text-red-400/80" }, label),
+    HX(
+      "div",
+      { className: "mt-0.5 flex items-baseline gap-1 whitespace-nowrap" },
+      HX("span", { className: "font-orbit text-[17px] leading-none", style: { color: col }, "data-macro-value": !0 }, fmtG(value)),
+      HX("span", { className: "font-orbit text-[11px] text-red-300/70" }, `/ ${goal ? fmtG(goal) : "—"} ${unit}`),
+    ),
+    HX(
+      "div",
+      { className: "mt-1.5 h-[3px] w-full bg-red-950" },
+      HX("div", {
+        className: "h-full transition-[width] duration-300",
+        style: { width: `${Math.min(100, pct)}%`, background: col, boxShadow: `0 0 6px ${col}` },
+      }),
+    ),
+    HX("div", { className: "mt-1 truncate text-[10px] uppercase tracking-wider", style: { color: col } }, msg),
+  );
+}
+// ===== DIETA: várias páginas (Bulking, Cutting…), refeições com alimentos e macros =====
+function DietPanel({ diets, setDiets, active, setActive, weight, onClose }) {
+  let d = diets.find((x) => x.id === active) || diets[0],
+    [delAsk, setDelAsk] = (0, K.useState)(!1),
+    [focusId, setFocusId] = (0, K.useState)(null),
+    upd = (fn) => setDiets((ds) => ds.map((x) => (x.id === d.id ? fn(x) : x))),
+    updMeal = (mid, fn) => upd((x) => ({ ...x, meals: x.meals.map((m) => (m.id === mid ? fn(m) : m)) })),
+    updItem = (mid, iid, key, v) =>
+      updMeal(mid, (m) => ({ ...m, items: m.items.map((it) => (it.id === iid ? { ...it, [key]: v } : it)) })),
+    // ---- matemática dos macros (memorizada) ----
+    mealT = (0, K.useMemo)(() => d.meals.map(mealTotals), [d.meals]),
+    day = (0, K.useMemo)(
+      () => mealT.reduce((a, t) => ({ c: a.c + t.c, p: a.p + t.p, f: a.f + t.f }), { c: 0, p: 0, f: 0 }),
+      [mealT],
+    ),
+    goal = (0, K.useMemo)(() => ({ c: mnum(d.goals.c), p: mnum(d.goals.p), f: mnum(d.goals.f) }), [d.goals]),
+    kcal = (0, K.useMemo)(() => kcalOf(day), [day]),
+    goalKcal = (0, K.useMemo)(() => kcalOf(goal), [goal]),
+    w = parseFloat(String(weight || "").replace(",", ".")),
+    newDiet = () => {
+      let nd = mkDiet(`Nova dieta ${diets.length + 1}`, !1);
+      (setDiets((ds) => [...ds, nd]), setActive(nd.id), setFocusId(`dn-${nd.id}`));
+    },
+    dupDiet = () => {
+      let cp = JSON.parse(JSON.stringify(d)),
+        re = (o) => ({ ...o, id: Qe() });
+      cp = {
+        ...re(cp),
+        name: `${d.name} (c\xF3pia)`.slice(0, 40),
+        meals: cp.meals.map((m) => ({ ...re(m), items: m.items.map(re) })),
+      };
+      (setDiets((ds) => [...ds, cp]), setActive(cp.id));
+    },
+    delDiet = () => {
+      let rest = diets.filter((x) => x.id !== d.id);
+      rest.length && (setDiets(rest), setActive(rest[0].id), setDelAsk(!1));
+    },
+    addFood = (mid) => {
+      let f = mkFood();
+      (updMeal(mid, (m) => ({ ...m, items: [...m.items, f] })), setFocusId(`fn-${f.id}`));
+    },
+    addMeal = () => {
+      let m = mkMeal(d.meals.length, { time: "", name: `Refei\xE7\xE3o ${d.meals.length + 1}` });
+      (upd((x) => ({ ...x, meals: [...x.meals, m] })), setFocusId(`mn-${m.id}`));
+    };
+  (0, K.useEffect)(() => setDelAsk(!1), [d.id]);
+  // foca o campo recém-criado (novo alimento / refeição / dieta)
+  (0, K.useEffect)(() => {
+    if (!focusId) return;
+    let el = document.querySelector(`[data-focus-id="${focusId}"]`);
+    (el && (el.focus(), el.select && el.select()), setFocusId(null));
+  }, [focusId]);
+  let GRID =
+    "grid grid-cols-5 items-center gap-1.5 sm:grid-cols-[minmax(0,1fr)_62px_58px_58px_58px_62px_30px]";
+  return (0, u.jsx)(U0, {
+    onClose,
+    wide: !0,
+    title: "Dieta",
+    code: "CYBERWARE//NUTRI\xC7\xC3O",
+    icon: en,
+    sub: "Alimentos, macros e metas \xB7 v\xE1rias dietas",
+    children: HX(
+      "div",
+      { className: "flex min-h-full flex-col", "data-diet-panel": !0 },
+      // ---- abas de dietas ----
+      HX(
+        "div",
+        { className: "flex items-center gap-1.5 overflow-x-auto border-b border-red-900/60 px-6 pb-3 pt-4", role: "tablist", "aria-label": "Dietas" },
+        ...diets.map((x) =>
+          HX(
+            "button",
+            {
+              key: x.id,
+              type: "button",
+              role: "tab",
+              "aria-selected": x.id === d.id,
+              onClick: () => setActive(x.id),
+              "data-diet-tab": x.id,
+              className: `shrink-0 max-w-[180px] truncate px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest transition-colors ${x.id === d.id ? "bg-cyan-400 text-black" : "border border-red-900 bg-zinc-950 text-red-400 hover:bg-[#3b0f14]"}`,
+              style: { clipPath: "polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)" },
+            },
+            x.name || "Sem nome",
+          ),
+        ),
+        HX(HBtn, { onClick: newDiet, tone: "primary", label: "Nova dieta", className: "shrink-0" }, HX(gt, { size: 13, strokeWidth: 3 }), "Nova dieta"),
+      ),
+      HX(
+        "div",
+        { className: "flex-1 space-y-4 px-6 py-4" },
+        // ---- nome da dieta + ações ----
+        HX(
+          "div",
+          { className: "flex flex-wrap items-end gap-2" },
+          HX(
+            "label",
+            { className: "min-w-[180px] flex-1" },
+            HX("span", { className: HLBL }, "Nome da dieta"),
+            HX("input", {
+              "aria-label": "Nome da dieta",
+              "data-focus-id": `dn-${d.id}`,
+              value: d.name,
+              maxLength: 40,
+              placeholder: "Ex.: Dieta Bulking",
+              onChange: (ev) => upd((x) => ({ ...x, name: ev.target.value.slice(0, 40) })),
+              className: `${HIN} font-semibold uppercase tracking-wider text-yellow-300`,
+            }),
+          ),
+          HX(HBtn, { onClick: dupDiet, label: "Duplicar dieta" }, "Duplicar"),
+          diets.length > 1 &&
+            (delAsk
+              ? HX(HBtn, { onClick: delDiet, tone: "danger", label: "Confirmar exclus\xE3o da dieta" }, HX(yt, { size: 13 }), "Confirmar")
+              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir dieta" }, HX(yt, { size: 13 }), "Excluir")),
+        ),
+        // ---- metas ----
+        HX(
+          "section",
+          { className: "border border-cyan-500/40 bg-cyan-500/[.06] p-3", "aria-label": "Metas de macronutrientes" },
+          HX(
+            "div",
+            { className: "mb-2 flex flex-wrap items-center justify-between gap-2" },
+            HX("h3", { className: "text-[12px] font-bold uppercase tracking-[0.2em] text-cyan-300" }, "Metas de macronutrientes"),
+            w > 0 &&
+              HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: () =>
+                    upd((x) => ({ ...x, goals: { ...x.goals, p: String(Math.round(w * 2)), f: String(Math.round(w)) } })),
+                  className: "text-[10px] uppercase tracking-wider text-yellow-300/90 underline-offset-2 hover:underline",
+                  title: "Prote\xEDna ≈ 2 g/kg e gordura ≈ 1 g/kg do peso em STATUS",
+                },
+                `Sugerir pelo peso (${String(w).replace(".", ",")} kg)`,
+              ),
+          ),
+          HX(
+            "div",
+            { className: "grid grid-cols-2 gap-2 sm:grid-cols-4" },
+            ...[
+              ["c", "Carboidrato alvo", "g"],
+              ["p", "Prote\xEDna alvo", "g"],
+              ["f", "Gordura alvo", "g"],
+            ].map(([k, lb, un]) =>
+              HX(
+                "label",
+                { key: k, className: "block" },
+                HX("span", { className: HLBL }, lb),
+                HX(
+                  "span",
+                  { className: "flex items-center gap-1" },
+                  HX("input", {
+                    "aria-label": lb,
+                    inputMode: "decimal",
+                    value: d.goals[k],
+                    placeholder: "0",
+                    onChange: (ev) => upd((x) => ({ ...x, goals: { ...x.goals, [k]: numIn(ev.target.value) } })),
+                    className: HNUM,
+                  }),
+                  HX("span", { className: "text-[10px] uppercase text-red-400/70" }, un),
+                ),
+              ),
+            ),
+            HX(
+              "div",
+              { className: "block" },
+              HX("span", { className: HLBL }, "Meta de calorias"),
+              HX(
+                "output",
+                {
+                  "aria-label": "Meta de calorias",
+                  "data-goal-kcal": !0,
+                  className: "flex h-[34px] items-center justify-end border border-yellow-500/60 bg-yellow-400/10 px-2 font-orbit text-[14px] text-yellow-300",
+                },
+                `${Math.round(goalKcal).toLocaleString("pt-BR")} kcal`,
+              ),
+            ),
+          ),
+          HX("p", { className: "mt-1.5 text-[10px] uppercase tracking-wider text-cyan-300/60" }, "kcal = carboidratos \xD7 4 + prote\xEDnas \xD7 4 + gorduras \xD7 9"),
+        ),
+        // ---- refeições ----
+        ...d.meals.map((m, mi) => {
+          let t = mealT[mi] || { c: 0, p: 0, f: 0 };
+          return HX(
+            "section",
+            { key: m.id, className: "border border-red-900/70 bg-black/30", "data-meal": m.id, "aria-label": m.name || `Refei\xE7\xE3o ${mi + 1}` },
+            HX(
+              "div",
+              { className: "flex flex-wrap items-center gap-2 border-b border-red-900/60 bg-red-950/20 px-3 py-2" },
+              HX("span", { className: "font-orbit text-[12px] font-bold text-yellow-400" }, String(mi + 1).padStart(2, "0")),
+              HX("input", {
+                type: "time",
+                "aria-label": `Hor\xE1rio da refei\xE7\xE3o ${mi + 1}`,
+                value: m.time,
+                onChange: (ev) => updMeal(m.id, (x) => ({ ...x, time: ev.target.value })),
+                className: `${HINB} w-[118px] shrink-0 font-orbit text-[13px]`,
+              }),
+              HX("input", {
+                "aria-label": `Nome da refei\xE7\xE3o ${mi + 1}`,
+                "data-focus-id": `mn-${m.id}`,
+                value: m.name,
+                maxLength: 40,
+                placeholder: "Nome da refei\xE7\xE3o",
+                onChange: (ev) => updMeal(m.id, (x) => ({ ...x, name: ev.target.value.slice(0, 40) })),
+                className: `${HINB} min-w-[120px] flex-1 font-semibold uppercase tracking-wider text-yellow-200`,
+              }),
+              HX(
+                "span",
+                { className: "ml-auto whitespace-nowrap font-orbit text-[12px] text-cyan-300", "data-meal-kcal": !0 },
+                `${Math.round(kcalOf(t)).toLocaleString("pt-BR")} kcal`,
+              ),
+              HX(MiniAct, { icon: yt, label: `Excluir refei\xE7\xE3o ${m.name || mi + 1}`, onClick: () => upd((x) => ({ ...x, meals: x.meals.filter((y) => y.id !== m.id) })), danger: !0, size: 28 }),
+            ),
+            HX(
+              "div",
+              { className: "space-y-2 px-3 py-2.5" },
+              m.items.length > 0 &&
+                HX(
+                  "div",
+                  { className: `${GRID} hidden text-[9px] font-semibold uppercase tracking-[0.15em] text-cyan-300/80 sm:grid` },
+                  HX("span", {}, "Alimento"),
+                  HX("span", { className: "text-right" }, "Qtd g"),
+                  HX("span", { className: "text-right" }, "Carb"),
+                  HX("span", { className: "text-right" }, "Prot"),
+                  HX("span", { className: "text-right" }, "Gord"),
+                  HX("span", { className: "text-right" }, "kcal"),
+                  HX("span", {}),
+                ),
+              ...m.items.map((it) => {
+                let ik = mnum(it.c) * 4 + mnum(it.p) * 4 + mnum(it.f) * 9,
+                  nf = (key, lb, ph) =>
+                    HX("input", {
+                      "aria-label": `${lb} \xB7 ${it.name || "alimento"}`,
+                      inputMode: "decimal",
+                      value: it[key],
+                      placeholder: ph,
+                      onChange: (ev) => updItem(m.id, it.id, key, numIn(ev.target.value)),
+                      className: `${HNUM} order-3 sm:order-none`,
+                    });
+                return HX(
+                  "div",
+                  { key: it.id, className: GRID, "data-food": it.id },
+                  HX("input", {
+                    "aria-label": "Nome do alimento",
+                    "data-focus-id": `fn-${it.id}`,
+                    value: it.name,
+                    maxLength: 60,
+                    placeholder: "Alimento",
+                    onChange: (ev) => updItem(m.id, it.id, "name", ev.target.value.slice(0, 60)),
+                    className: `${HIN} order-1 col-span-4 sm:order-none sm:col-span-1`,
+                  }),
+                  nf("qty", "Quantidade em gramas", "g"),
+                  nf("c", "Carboidratos em gramas", "C"),
+                  nf("p", "Prote\xEDnas em gramas", "P"),
+                  nf("f", "Gorduras em gramas", "G"),
+                  HX(
+                    "output",
+                    { className: "order-3 text-right font-orbit text-[12px] text-cyan-300 sm:order-none", "aria-label": "Calorias do alimento" },
+                    Math.round(ik),
+                  ),
+                  HX(
+                    "span",
+                    { className: "order-2 flex justify-end sm:order-none" },
+                    HX(MiniAct, {
+                      icon: Da,
+                      label: `Remover ${it.name || "alimento"}`,
+                      onClick: () => updMeal(m.id, (x) => ({ ...x, items: x.items.filter((y) => y.id !== it.id) })),
+                      danger: !0,
+                      size: 26,
+                    }),
+                  ),
+                );
+              }),
+              HX(
+                "div",
+                { className: "flex flex-wrap items-center justify-between gap-2 pt-1" },
+                HX(
+                  HBtn,
+                  { onClick: () => addFood(m.id), label: `Adicionar alimento em ${m.name || `refei\xE7\xE3o ${mi + 1}`}`, className: "border-dashed border-cyan-600/70 text-cyan-300 hover:bg-cyan-900/30 hover:text-cyan-100" },
+                  HX(gt, { size: 13, strokeWidth: 3 }),
+                  "Adicionar alimento",
+                ),
+                m.items.length > 0 &&
+                  HX(
+                    "span",
+                    { className: "font-orbit text-[11px] tracking-wider text-red-300/80", "data-meal-sum": !0 },
+                    `C ${fmtG(t.c)} \xB7 P ${fmtG(t.p)} \xB7 G ${fmtG(t.f)} g`,
+                  ),
+              ),
+              (m.note || m.items.length === 0) &&
+                HX("input", {
+                  "aria-label": `Observa\xE7\xE3o da refei\xE7\xE3o ${mi + 1}`,
+                  value: m.note,
+                  maxLength: 300,
+                  placeholder: "Observa\xE7\xE3o (opcional)",
+                  onChange: (ev) => updMeal(m.id, (x) => ({ ...x, note: ev.target.value.slice(0, 300) })),
+                  className: `${HIN} text-[12px] italic text-red-200/80`,
+                }),
+            ),
+          );
+        }),
+        HX(
+          HBtn,
+          { onClick: addMeal, label: "Adicionar refei\xE7\xE3o", className: "w-full border-dashed py-2.5" },
+          HX(gt, { size: 13, strokeWidth: 3 }),
+          "Adicionar refei\xE7\xE3o",
+        ),
+      ),
+      // ---- painel de totais (fixo no rodapé do painel) ----
+      HX(
+        "div",
+        { className: "z-10 border-t-2 sm:sticky sm:bottom-0 border-yellow-400/70 bg-[#12080b]/95 px-6 pb-4 pt-3 backdrop-blur", "data-diet-totals": !0 },
+        HX(
+          "div",
+          { className: "mb-2 flex items-center justify-between gap-2" },
+          HX("h3", { className: "text-[12px] font-bold uppercase tracking-[0.2em] text-yellow-400" }, "Totais do dia"),
+          HX(ye, { variant: "primary", onClick: onClose }, "Salvar e fechar"),
+        ),
+        HX(
+          "div",
+          { className: "grid grid-cols-2 gap-2 sm:grid-cols-4" },
+          HX(MacroStat, { label: "Carboidratos", value: day.c, goal: goal.c, unit: "g", k: "c" }),
+          HX(MacroStat, { label: "Prote\xEDnas", value: day.p, goal: goal.p, unit: "g", k: "p" }),
+          HX(MacroStat, { label: "Gorduras", value: day.f, goal: goal.f, unit: "g", k: "f" }),
+          HX(MacroStat, { label: "Calorias", value: kcal, goal: goalKcal, unit: "kcal", k: "kcal" }),
+        ),
+      ),
+    ),
+  });
+}
+var ChevUp = (p) => (0, u.jsx)(df, { ...p, className: "rotate-90" }),
+  ChevDown = (p) => (0, u.jsx)(pf, { ...p, className: "rotate-90" });
+// ===== TREINO: exercícios estruturados por grupo muscular =====
+function Yie({ part: e, train, setTrain, onSwitch: r, onClose: n }) {
   let [o, i] = (0, K.useState)(null),
+    [resetAsk, setResetAsk] = (0, K.useState)(!1),
+    [focusId, setFocusId] = (0, K.useState)(null),
     l = kd.find((c) => c.id === e),
-    s = t[e];
+    P = train[e] || { ex: [], note: "" },
+    upd = (fn) => setTrain((t) => ({ ...t, [e]: fn(t[e] || { ex: [], note: "" }) })),
+    setF = (id, key, v) => upd((p) => ({ ...p, ex: p.ex.map((x) => (x.id === id ? { ...x, [key]: v } : x)) })),
+    move = (id, dir) =>
+      upd((p) => {
+        let a = p.ex.slice(),
+          ix = a.findIndex((x) => x.id === id),
+          j = ix + dir;
+        return j < 0 || j >= a.length ? p : (([a[ix], a[j]] = [a[j], a[ix]]), { ...p, ex: a });
+      }),
+    add = () => {
+      let x = mkEx();
+      (upd((p) => ({ ...p, ex: [...p.ex, x] })), setFocusId(x.id));
+    },
+    totalSets = (0, K.useMemo)(() => P.ex.reduce((s, x) => s + (parseInt(x.sets, 10) || 0), 0), [P.ex]);
+  (0, K.useEffect)(() => setResetAsk(!1), [e]);
+  (0, K.useEffect)(() => {
+    if (!focusId) return;
+    let el = document.querySelector(`[data-ex-name="${focusId}"]`);
+    (el && el.focus(), setFocusId(null));
+  }, [focusId]);
   return (0, u.jsx)(U0, {
     onClose: n,
+    wide: !0,
     title: `Treino \xB7 ${l.name}`,
     code: `CYBERWARE//${l.tag.toUpperCase()}`,
     icon: Go,
     sub: "Clique no corpo para trocar de grupo",
-    children: (0, u.jsxs)("div", {
-      className: "px-6 py-4",
-      children: [
-        (0, u.jsx)("div", {
-          className: "mx-auto w-full max-w-[300px]",
-          children: (0, u.jsx)(nR, { idp: "tr", activePart: e, hot: o, onHot: i, onOpen: r, hud: !1 }),
+    children: HX(
+      "div",
+      { className: "px-6 py-4", "data-train-panel": e },
+      HX(
+        "div",
+        { className: "mx-auto w-full max-w-[260px]" },
+        HX(nR, { idp: "tr", activePart: e, hot: o, onHot: i, onOpen: r, hud: !1 }),
+      ),
+      HX(
+        "div",
+        { className: "mt-2 flex flex-wrap gap-1.5", role: "tablist", "aria-label": "Grupo muscular" },
+        ...kd.map((c) =>
+          HX(
+            "button",
+            {
+              key: c.id,
+              role: "tab",
+              "aria-selected": c.id === e,
+              onClick: () => r(c.id),
+              onMouseEnter: () => i(c.id),
+              onMouseLeave: () => i(null),
+              className: `h-9 min-w-[84px] flex-1 text-[11px] font-semibold uppercase tracking-wider transition-all hover:scale-105 ${c.id === e ? "bg-yellow-400 text-black" : "border border-red-900 bg-zinc-950 text-red-400 hover:bg-[#3b0f14]"}`,
+              style: { clipPath: "polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)" },
+            },
+            c.name,
+          ),
+        ),
+      ),
+      HX(
+        "div",
+        { className: "mt-4 flex items-center justify-between gap-2" },
+        HX("h3", { className: "text-[12px] font-bold uppercase tracking-[0.2em] text-cyan-300" }, `Exerc\xEDcios \xB7 ${l.tag}`),
+        HX("span", { className: "font-orbit text-[11px] tracking-wider text-red-300/80", "data-train-sum": !0 }, `${P.ex.length} exerc\xEDcio${P.ex.length === 1 ? "" : "s"} \xB7 ${totalSets} s\xE9ries`),
+      ),
+      HX(
+        "ol",
+        { className: "mt-2 space-y-2", "aria-label": "Exerc\xEDcios" },
+        P.ex.length === 0 &&
+          HX("li", { className: "border border-dashed border-red-900/80 px-3 py-4 text-center text-[12px] uppercase tracking-widest text-red-400/70" }, "Nenhum exerc\xEDcio \xB7 use o bot\xE3o abaixo"),
+        ...P.ex.map((x, ix) =>
+          HX(
+            "li",
+            { key: x.id, className: "border border-red-900/70 bg-black/35 p-2.5", "data-exercise": x.id },
+            HX(
+              "div",
+              { className: "flex items-center gap-2" },
+              HX("span", { className: "font-orbit text-[12px] font-bold text-yellow-400" }, String(ix + 1).padStart(2, "0")),
+              HX("input", {
+                "aria-label": "Nome do exerc\xEDcio",
+                "data-ex-name": x.id,
+                value: x.name,
+                maxLength: 60,
+                placeholder: "Nome do exerc\xEDcio",
+                onChange: (ev) => setF(x.id, "name", ev.target.value.slice(0, 60)),
+                className: `${HINB} flex-1 font-semibold text-yellow-100`,
+              }),
+              HX(MiniAct, { icon: ChevUp, label: `Mover ${x.name || "exerc\xEDcio"} para cima`, onClick: () => move(x.id, -1), size: 28 }),
+              HX(MiniAct, { icon: ChevDown, label: `Mover ${x.name || "exerc\xEDcio"} para baixo`, onClick: () => move(x.id, 1), size: 28 }),
+              HX(MiniAct, { icon: yt, label: `Excluir ${x.name || "exerc\xEDcio"}`, onClick: () => upd((p) => ({ ...p, ex: p.ex.filter((y) => y.id !== x.id) })), danger: !0, size: 28 }),
+            ),
+            HX(
+              "div",
+              { className: "mt-2 grid grid-cols-2 gap-2 sm:grid-cols-[76px_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)]" },
+              HX(
+                "label",
+                {},
+                HX("span", { className: HLBL }, "S\xE9ries"),
+                HX("input", {
+                  "aria-label": "S\xE9ries",
+                  type: "number",
+                  min: "0",
+                  max: "99",
+                  inputMode: "numeric",
+                  value: x.sets,
+                  placeholder: "0",
+                  onChange: (ev) => setF(x.id, "sets", ev.target.value.replace(/\D/g, "").slice(0, 2)),
+                  className: HNUM,
+                }),
+              ),
+              HX(
+                "label",
+                {},
+                HX("span", { className: HLBL }, "Repeti\xE7\xF5es"),
+                HX("input", {
+                  "aria-label": "Repeti\xE7\xF5es",
+                  value: x.reps,
+                  maxLength: 20,
+                  placeholder: "8-12",
+                  onChange: (ev) => setF(x.id, "reps", ev.target.value.slice(0, 20)),
+                  className: `${HIN} font-orbit text-[13px]`,
+                }),
+              ),
+              HX(
+                "label",
+                {},
+                HX("span", { className: HLBL }, "T\xE9cnica avan\xE7ada"),
+                HX("input", {
+                  "aria-label": "T\xE9cnica avan\xE7ada",
+                  value: x.tech,
+                  maxLength: 40,
+                  list: "tech-list",
+                  placeholder: "Drop-set, rest-pause…",
+                  onChange: (ev) => setF(x.id, "tech", ev.target.value.slice(0, 40)),
+                  className: HIN,
+                }),
+              ),
+              HX(
+                "label",
+                {},
+                HX("span", { className: `${HLBL} text-yellow-300` }, "PR \xB7 carga m\xE1x."),
+                HX("input", {
+                  "aria-label": "PR (recorde pessoal)",
+                  value: x.pr,
+                  maxLength: 20,
+                  placeholder: "Ex.: 80 kg",
+                  onChange: (ev) => setF(x.id, "pr", ev.target.value.slice(0, 20)),
+                  className: `${HIN} font-orbit text-[13px] text-yellow-300`,
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+      HX(
+        "datalist",
+        { id: "tech-list" },
+        ...["Drop-set", "Rest-pause", "Bi-set", "Super-set", "Cluster set", "FST-7", "Pir\xE2mide", "Negativa", "Isometria"].map((t) =>
+          HX("option", { key: t, value: t }),
+        ),
+      ),
+      HX(
+        "button",
+        {
+          type: "button",
+          onClick: add,
+          "data-add-exercise": !0,
+          className:
+            "mt-3 flex w-full items-center justify-center gap-2 border-2 border-dashed border-yellow-400/80 bg-yellow-400/10 py-2.5 text-[13px] font-bold uppercase tracking-[0.2em] text-yellow-300 transition-colors hover:bg-yellow-400 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
+        },
+        "[ + Adicionar exerc\xEDcio ]",
+      ),
+      HX(
+        "label",
+        { className: "mt-4 block" },
+        HX("span", { className: HLBL }, "Observa\xE7\xF5es do treino"),
+        HX("input", {
+          "aria-label": "Observa\xE7\xF5es do treino",
+          value: P.note,
+          maxLength: 300,
+          placeholder: "Descanso, cad\xEAncia, aquecimento…",
+          onChange: (ev) => upd((p) => ({ ...p, note: ev.target.value.slice(0, 300) })),
+          className: HIN,
         }),
-        (0, u.jsx)("div", {
-          className: "mt-2 flex gap-1.5",
-          role: "tablist",
-          "aria-label": "Grupo muscular",
-          children: kd.map((c) =>
-            (0, u.jsx)(
+      ),
+      HX(
+        "div",
+        { className: "mt-4 flex flex-wrap items-center justify-between gap-3" },
+        resetAsk
+          ? HX(
+              "span",
+              { className: "flex items-center gap-2" },
+              HX(HBtn, { onClick: () => (upd(() => parseWorkout(N8[e])), setResetAsk(!1)), tone: "danger", label: "Confirmar restaurar treino padr\xE3o" }, "Substituir pelo padr\xE3o"),
+              HX(HBtn, { onClick: () => setResetAsk(!1), label: "Cancelar" }, "Cancelar"),
+            )
+          : HX(
               "button",
               {
-                role: "tab",
-                "aria-selected": c.id === e,
-                onClick: () => r(c.id),
-                onMouseEnter: () => i(c.id),
-                onMouseLeave: () => i(null),
-                className: `h-9 flex-1 text-[11px] font-semibold uppercase tracking-wider transition-all hover:scale-105 ${c.id === e ? "bg-yellow-400 text-black" : "border border-red-900 bg-zinc-950 text-red-400 hover:bg-[#3b0f14]"}`,
-                style: { clipPath: "polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)" },
-                children: c.name,
+                type: "button",
+                onClick: () => setResetAsk(!0),
+                className: "text-[11px] uppercase tracking-wider text-red-400/80 transition-colors hover:text-yellow-300",
               },
-              c.id,
+              "Restaurar treino padr\xE3o",
             ),
-          ),
-        }),
-        (0, u.jsxs)("label", {
-          className: "mt-4 block",
-          children: [
-            (0, u.jsxs)("span", {
-              className:
-                "mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300",
-              children: [
-                (0, u.jsx)("span", { children: "Plano de treino \xB7 edit\xE1vel" }),
-                (0, u.jsx)("span", { className: "text-red-400/80", children: l.tag }),
-              ],
-            }),
-            (0, u.jsx)(ga, {
-              children: (0, u.jsx)(
-                "textarea",
-                {
-                  "aria-label": `Treino de ${l.name}`,
-                  rows: 12,
-                  maxLength: 4e3,
-                  value: s,
-                  onChange: (c) => a(e, c.target.value),
-                  className: `${ya} resize-none leading-relaxed`,
-                },
-                e,
-              ),
-            }),
-            (0, u.jsxs)("span", {
-              className: "mt-1 block text-right text-[10px] tracking-widest text-red-400/60",
-              children: [s.length, "/4000 \xB7 salvo automaticamente"],
-            }),
-          ],
-        }),
-        (0, u.jsxs)("div", {
-          className: "mt-3 flex items-center justify-between gap-3",
-          children: [
-            (0, u.jsx)("button", {
-              onClick: () => a(e, N8[e]),
-              className: "text-[11px] uppercase tracking-wider text-red-400/80 transition-colors hover:text-yellow-300",
-              children: "Restaurar treino padr\xE3o",
-            }),
-            (0, u.jsx)(ye, { variant: "primary", onClick: n, children: "Salvar e fechar" }),
-          ],
-        }),
-      ],
-    }),
+        HX(ye, { variant: "primary", onClick: n }, "Salvar e fechar"),
+      ),
+    ),
   });
 }
-function Zie({ diet: e, weight: t, onChange: a, onReset: r, onClose: n }) {
-  let o = parseFloat(t),
-    i =
-      o > 0
-        ? `Meta di\xE1ria (${String(o).replace(".", ",")} kg): prote\xEDna \u2248 ${Math.round(o * 2)} g \xB7 gordura \u2248 ${Math.round(o)} g`
-        : "Meta: \u2248 2 g/kg de prote\xEDna \xB7 \u2248 1 g/kg de gordura (informe o peso em STATUS para calcular)";
-  return (0, u.jsx)(U0, {
-    onClose: n,
-    title: "Dieta",
-    code: "CYBERWARE//NUTRI\xC7\xC3O",
-    icon: en,
-    sub: "5 refei\xE7\xF5es \xB7 comida de verdade",
-    children: (0, u.jsxs)("div", {
-      className: "px-6 py-5",
-      children: [
-        (0, u.jsx)("div", {
-          className:
-            "border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-[12px] uppercase leading-snug tracking-wider text-cyan-200",
-          children: i,
-        }),
-        (0, u.jsx)("div", {
-          className: "mt-4 space-y-4",
-          children: e.map((l, s) =>
-            (0, u.jsxs)(
-              "div",
-              {
-                className: "relative border border-red-900/70 bg-black/30 p-3",
-                children: [
-                  (0, u.jsxs)("div", {
-                    className: "mb-2 flex items-center justify-between gap-3",
-                    children: [
-                      (0, u.jsxs)("span", {
-                        className: "font-orbit text-[13px] font-bold uppercase tracking-[0.15em] text-yellow-400",
-                        children: ["Refei\xE7\xE3o ", s + 1],
-                      }),
-                      (0, u.jsxs)("label", {
-                        className: "flex items-center gap-2",
-                        children: [
-                          (0, u.jsx)("span", {
-                            className: "text-[10px] uppercase tracking-[0.2em] text-cyan-300",
-                            children: "Hor\xE1rio",
-                          }),
-                          (0, u.jsx)("span", {
-                            className: "w-[112px]",
-                            children: (0, u.jsx)(ga, {
-                              children: (0, u.jsx)("input", {
-                                type: "time",
-                                "aria-label": `Hor\xE1rio da refei\xE7\xE3o ${s + 1}`,
-                                value: l.time,
-                                onChange: (c) => a(s, "time", c.target.value),
-                                className: `${ya} font-orbit`,
-                              }),
-                            }),
-                          }),
-                        ],
-                      }),
-                    ],
-                  }),
-                  (0, u.jsxs)("label", {
-                    className: "block",
-                    children: [
-                      (0, u.jsx)("span", {
-                        className: "mb-1 block text-[10px] uppercase tracking-[0.2em] text-cyan-300",
-                        children: "Descri\xE7\xE3o / alimentos",
-                      }),
-                      (0, u.jsx)(ga, {
-                        children: (0, u.jsx)("textarea", {
-                          "aria-label": `Descri\xE7\xE3o da refei\xE7\xE3o ${s + 1}`,
-                          rows: 3,
-                          maxLength: 1e3,
-                          value: l.text,
-                          onChange: (c) => a(s, "text", c.target.value),
-                          placeholder: "Ex.: ovos, frango, arroz, feij\xE3o, azeite\u2026",
-                          className: `${ya} resize-none leading-snug`,
-                        }),
-                      }),
-                    ],
-                  }),
-                ],
-              },
-              s,
-            ),
-          ),
-        }),
-        (0, u.jsxs)("div", {
-          className: "mt-4 flex items-center justify-between gap-3",
-          children: [
-            (0, u.jsx)("button", {
-              onClick: r,
-              className: "text-[11px] uppercase tracking-wider text-red-400/80 transition-colors hover:text-yellow-300",
-              children: "Restaurar dieta padr\xE3o",
-            }),
-            (0, u.jsx)(ye, { variant: "primary", onClick: n, children: "Salvar e fechar" }),
-          ],
-        }),
-      ],
-    }),
-  });
-}
+
 function Qie({ points: e }) {
   let n = e.map((d) => d.weight),
     o = Math.min(...n),
@@ -4213,21 +4840,23 @@ var Cd = {
   max: { border: "#facc15", fill: "#2e2606", icon: "#fde047", ring: "#a16207", label: "#fde047" },
   dim: { border: "#4b151b", fill: "#12080a", icon: "#6b2027", ring: "#2a0d11", label: "#7f2a32" },
 };
-function ale({ n: e, level: t, onSet: a, onHover: r, onRemove: n, onEdit: ed }) {
+function ale({ n: e, level: t, onSet: a, onHover: r, onRemove: n, onEdit: ed, flow: fl }) {
   let o = e.icon,
     i = t >= Ot ? "max" : t > 0 ? "on" : "avail",
     l = Cd[i],
-    s = 80,
+    s = fl ? 88 : 80,
     c = i === "max" ? "max-glow" : i === "on" ? "unlocked-glow" : "avail";
   return (0, u.jsxs)("div", {
-    className: "group/sk absolute flex flex-col items-center",
-    style: { left: e.x - 70, top: e.y - s / 2, width: 140 },
+    // flow = célula da grade responsiva (Habilidades Técnicas); senão posição absoluta no canvas
+    className: `group/sk ${fl ? "relative" : "absolute"} flex flex-col items-center`,
+    style: fl ? void 0 : { left: e.x - 70, top: e.y - s / 2, width: 140 },
+    role: fl ? "listitem" : void 0,
     "data-skill": e.name,
     children: [
       (n || ed) &&
         (0, u.jsxs)("div", {
           className: `absolute z-10 flex gap-1 ${ACT_REVEAL} group-hover/sk:opacity-100 group-focus-within/sk:opacity-100`,
-          style: { left: 96, top: -10 },
+          style: fl ? { left: "calc(50% + 30px)", top: -10 } : { left: 96, top: -10 },
           "data-skill-actions": !0,
           children: [
             ed && (0, u.jsx)(MiniAct, { icon: ns, label: `Editar habilidade ${e.name}`, onClick: () => ed(e.name), size: 21 }),
@@ -4314,48 +4943,55 @@ function ale({ n: e, level: t, onSet: a, onHover: r, onRemove: n, onEdit: ed }) 
     ],
   });
 }
+// Habilidades Técnicas: grade responsiva que ocupa toda a largura (colunas automáticas), sem escalar os botões
 function rle({ cat: e, levels: t, onSet: a, onHover: r, onRemove: n, onEdit: ed }) {
-  let { W: o, H: i } = e,
-    l = 14,
-    s = 26;
-  return (0, u.jsxs)(
-    z0,
-    {
-      W: o,
-      H: i,
+  return (0, u.jsx)("div", {
+    className: "min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-4 md:px-6",
+    children: (0, u.jsxs)("div", {
+      className: "relative mx-auto w-full max-w-[1800px]",
+      "data-tec-grid-wrap": !0,
       children: [
-        (0, u.jsxs)("svg", {
-          width: o,
-          height: i,
-          className: "absolute inset-0",
-          style: { pointerEvents: "none" },
+        (0, u.jsx)("div", {
+          className: "absolute inset-0 bg-[#5a1a22]",
+          style: { clipPath: "polygon(26px 0,100% 0,100% calc(100% - 26px),calc(100% - 26px) 100%,0 100%,0 26px)" },
+        }),
+        (0, u.jsx)("div", {
+          className: "absolute bg-[#1e080c]/90",
+          style: {
+            inset: 1.5,
+            clipPath: "polygon(25px 0,100% 0,100% calc(100% - 25px),calc(100% - 25px) 100%,0 100%,0 25px)",
+          },
+        }),
+        (0, u.jsxs)("div", {
+          className: "relative px-4 pb-6 pt-4 sm:px-6",
           children: [
-            (0, u.jsx)("polygon", {
-              points: `${l + s},${l} ${o - l},${l} ${o - l},${i - l - s} ${o - l - s},${i - l} ${l},${i - l} ${l},${l + s}`,
-              fill: "rgba(30,8,12,.35)",
-              stroke: "#5a1a22",
-              strokeWidth: "1.5",
+            (0, u.jsxs)("div", {
+              className: "mb-5 flex items-center gap-4",
+              children: [
+                (0, u.jsx)("span", { className: "h-[3px] w-[90px] shrink-0 bg-yellow-400" }),
+                (0, u.jsx)("span", {
+                  className: "text-[11px] uppercase tracking-[0.3em] text-red-500/80",
+                  children: "Arsenal // 5 n\xEDveis \xB7 sem requisitos",
+                }),
+              ],
             }),
-            (0, u.jsx)("path", { d: `M${l + s} ${l} H${l + s + 90}`, stroke: "#facc15", strokeWidth: "3" }),
-            (0, u.jsx)("path", { d: `M${o - l} ${i - l - s - 60} V${i - l - s}`, stroke: "#22d3ee", strokeWidth: "3" }),
-            (0, u.jsx)("text", {
-              x: l + s + 104,
-              y: l + 5,
-              fill: "#ef4444",
-              fillOpacity: ".8",
-              fontSize: "12",
-              letterSpacing: "4",
-              children: "ARSENAL // 5 N\xCDVEIS \xB7 SEM REQUISITOS",
+            (0, u.jsx)("div", {
+              className: "grid gap-x-3 gap-y-7 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]",
+              role: "list",
+              "data-tec-grid": !0,
+              children: e.list.map((c) =>
+                (0, u.jsx)(
+                  ale,
+                  { n: c, level: t[c.name] || 0, onSet: a, onHover: r, onRemove: n, onEdit: ed, flow: !0 },
+                  c.name,
+                ),
+              ),
             }),
           ],
         }),
-        e.list.map((c) =>
-          (0, u.jsx)(ale, { n: c, level: t[c.name] || 0, onSet: a, onHover: r, onRemove: n, onEdit: ed }, c.name),
-        ),
       ],
-    },
-    e.id,
-  );
+    }),
+  });
 }
 var gs = "polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)",
   Ve = { W: 1e3, H: 690, hexY: 555, hexW: 132, hexH: 116, top: 88, step: 88, x0: 100, dx: 200 },
@@ -4378,9 +5014,10 @@ function nle({
     m = r ? (o ? "max-glow" : "unlocked-glow") : n ? "avail" : "";
   return (0, u.jsxs)("button", {
     onClick: (x) => s(l, a, x.currentTarget),
-    onMouseEnter: () => c({ name: l, lvl: a }),
+    // guarda o retângulo do losango para o tooltip flutuante (que não captura o mouse)
+    onMouseEnter: (x) => c({ name: l, lvl: a, rect: x.currentTarget.getBoundingClientRect() }),
     onMouseLeave: () => c(null),
-    onFocus: () => c({ name: l, lvl: a }),
+    onFocus: (x) => c({ name: l, lvl: a, rect: x.currentTarget.getBoundingClientRect() }),
     onBlur: () => c(null),
     "aria-label": `${l}, n\xEDvel ${a}: ${r ? "conclu\xEDdo" : n ? "pendente (pr\xF3ximo)" : "bloqueado"}${i ? ", com miss\xE3o definida" : ""}`,
     "aria-haspopup": "dialog",
@@ -7666,7 +8303,18 @@ function PcBlueprint({ setup, hot, onHot, onOpen, compact }) {
       ),
       T(528, 190, "DDR5", { fs: "8", fill: "#22d3ee", op: ".6" }),
     ),
-    // ===== PROCESSADOR =====
+    // ===== COOLER · bomba e mangueiras (só visual: NÃO capturam clique, para não cobrir o processador e a RAM) =====
+    BPX(
+      "g",
+      { className: st("cooler"), style: { pointerEvents: "none" }, "data-pc-deco": "cooler" },
+      C(480, 248, 40, "pc-s", { style: { fill: "none" }, strokeDasharray: "6 4" }),
+      C(480, 248, 46, "pc-d", { strokeDasharray: "2 5" }),
+      S("M514 232 C560 214 600 196 616 146 M516 262 C578 250 632 212 648 146", {
+        style: { fill: "none" },
+        strokeWidth: "2.2",
+      }),
+    ),
+    // ===== PROCESSADOR (desenhado por cima da bomba: área de clique exclusiva) =====
     G(
       "cpu",
       "Processador",
@@ -7683,9 +8331,7 @@ function PcBlueprint({ setup, hot, onHot, onOpen, compact }) {
     G(
       "cooler",
       "Cooler",
-      C(480, 248, 40, "pc-s", { fill: "none", strokeDasharray: "6 4" }),
-      C(480, 248, 46, "pc-d", { strokeDasharray: "2 5" }),
-      S("M514 232 C560 214 600 196 616 146 M516 262 C578 250 632 212 648 146", { fill: "none", strokeWidth: "2.2" }),
+      // área de clique do cooler = radiador + ventoinhas no topo do gabinete
       R(420, 122, 244, 22, "pc-s"),
       D(
         range(426, 658, 6)
@@ -9544,6 +10190,9 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     [Q, re] = (0, K.useState)(() => M0().d),
     [pe, X] = (0, K.useState)(() => M0().measures),
     [ce, te] = (0, K.useState)(() => M0().logs),
+    [dietsS, setDietsS] = (0, K.useState)(() => M0().diets),
+    [dietAct, setDietAct] = (0, K.useState)(() => M0().dietActive),
+    [trainS, setTrainS] = (0, K.useState)(() => M0().train),
     [U, Ie] = (0, K.useState)(Lie),
     [ue, be] = (0, K.useState)(null),
     [xe, Te] = (0, K.useState)(null),
@@ -9597,9 +10246,20 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     }, [M, N, I]),
     (0, K.useEffect)(() => {
       try {
-        localStorage.setItem(T8, JSON.stringify({ workouts: G, diet: Q, logs: ce, measures: pe }));
+        localStorage.setItem(
+          T8,
+          JSON.stringify({
+            workouts: G,
+            diet: Q,
+            logs: ce,
+            measures: pe,
+            diets2: dietsS,
+            dietActive: dietAct,
+            train2: trainS,
+          }),
+        );
       } catch {}
-    }, [G, Q, ce, pe]),
+    }, [G, Q, ce, pe, dietsS, dietAct, trainS]),
     (0, K.useEffect)(() => {
       try {
         localStorage.setItem(_8, JSON.stringify(s));
@@ -9681,7 +10341,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
   let Ir = n === "hub",
     tn = Ir ? kr.find(($) => $.id === i) : void 0,
     lR = ($) => {
-      (o($), Et(null), je(null), be(null), q(!1), $ === "hub" && l("hub"));
+      (o($), Et(null), je(null), be(null), q(!1), l("hub"));
     },
     lt = ($, J, act) => {
       (Tt({ text: $, tone: J, act }),
@@ -9964,7 +10624,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     Ar;
   if (ta)
     Ar = (0, u.jsxs)("span", {
-      className: `flex flex-wrap items-center justify-center gap-x-3 font-semibold uppercase tracking-wider ${ta.tone === "warn" ? "text-yellow-400" : "text-cyan-300"}`,
+      className: `inline-flex max-w-full items-center justify-center gap-x-3 whitespace-nowrap font-semibold uppercase tracking-wider ${ta.tone === "warn" ? "text-yellow-400" : "text-cyan-300"}`,
       role: "status",
       children: [
         ta.text,
@@ -10003,7 +10663,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     else if (Nt.lvl) {
       let $ = ((j[Pr.name] || [])[Nt.lvl - 1] || "").trim();
       Ar = (0, u.jsxs)("span", {
-        className: "uppercase tracking-wider truncate max-w-[60vw]",
+        className: "uppercase tracking-wider",
         children: [
           (0, u.jsxs)("b", { className: "text-cyan-300", children: [Pr.name, " \xB7 nv ", Nt.lvl] }),
           " ",
@@ -10046,7 +10706,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
             className: "uppercase tracking-wider text-red-400/80",
             children: "Selecione um atributo para abrir a \xE1rvore de habilidades",
           }))
-        : tn.free
+        : tn && tn.free
           ? (Ar = (0, u.jsxs)("span", {
               className: "uppercase tracking-wider text-red-400/80",
               children: [
@@ -10228,8 +10888,12 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
               }),
               (0, u.jsxs)("div", {
                 className:
-                  "order-3 sm:order-2 w-full sm:w-auto min-w-0 text-center text-[12px] sm:text-[13px] flex items-center justify-center gap-2 min-h-[20px]",
-                children: [(0, u.jsx)(ad, { size: 15, className: "text-red-500 shrink-0" }), Ar],
+                  "order-3 sm:order-2 w-full sm:w-auto sm:flex-1 min-w-0 h-5 overflow-hidden text-center text-[12px] sm:text-[13px] flex items-center justify-center gap-2",
+                "data-footer-msg": !0,
+                children: [
+                  (0, u.jsx)(ad, { size: 15, className: "text-red-500 shrink-0" }),
+                  (0, u.jsx)("span", { className: "block min-w-0 truncate whitespace-nowrap", children: Ar }),
+                ],
               }),
               (0, u.jsxs)("div", {
                 className: "order-2 sm:order-3 flex items-center gap-3 sm:gap-4",
@@ -10260,6 +10924,40 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
             ],
           })
         : (0, u.jsx)(ple, { tab: n }),
+      // Tooltip da missão: posição fixa acima do losango, sem capturar o mouse (sem loop hover/leave)
+      !St &&
+        Nt &&
+        Nt.lvl &&
+        Nt.rect &&
+        Pr &&
+        !Pr.free &&
+        (() => {
+          let $ = ((j[Pr.name] || [])[Nt.lvl - 1] || "").trim(),
+            J = Nt.rect,
+            oe = J.top > 170,
+            le = Math.max(170, Math.min(window.innerWidth - 170, J.left + J.width / 2));
+          return (0, u.jsxs)("div", {
+            role: "tooltip",
+            "data-mission-tip": !0,
+            className:
+              "pointer-events-none fixed z-40 w-max max-w-[320px] border border-cyan-400/70 bg-[#0a0507]/95 px-3 py-2 text-left shadow-[0_0_18px_rgba(34,211,238,.25)]",
+            style: {
+              left: le,
+              top: oe ? J.top - 10 : J.bottom + 10,
+              transform: `translate(-50%, ${oe ? "-100%" : "0"})`,
+            },
+            children: [
+              (0, u.jsxs)("div", {
+                className: "text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-300",
+                children: [Pr.name, " \xB7 n\xEDvel ", Nt.lvl],
+              }),
+              (0, u.jsx)("div", {
+                className: `mt-1 whitespace-pre-line text-[13px] leading-snug ${$ ? "text-yellow-200" : "text-red-400/80"}`,
+                children: $ || "Sem miss\xE3o definida \xB7 clique para editar",
+              }),
+            ],
+          });
+        })(),
       St &&
         tn &&
         (0, u.jsx)(sle, {
@@ -10277,8 +10975,8 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
         ue.type === "train" &&
         (0, u.jsx)(Yie, {
           part: ue.part,
-          workouts: G,
-          onChange: fR,
+          train: trainS,
+          setTrain: setTrainS,
           onSwitch: ($) => be({ type: "train", part: $ }),
           onClose: () => be(null),
         }),
@@ -10286,7 +10984,14 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
         i === "hub" &&
         ue &&
         ue.type === "diet" &&
-        (0, u.jsx)(Zie, { diet: Q, weight: B.status.peso, onChange: dR, onReset: pR, onClose: () => be(null) }),
+        (0, u.jsx)(DietPanel, {
+          diets: dietsS,
+          setDiets: setDietsS,
+          active: dietAct,
+          setActive: setDietAct,
+          weight: B.status.peso,
+          onClose: () => be(null),
+        }),
       Ir &&
         i === "hub" &&
         ue &&
