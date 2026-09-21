@@ -448,8 +448,8 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     ui.btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (!open) { closeConfirm(); bMsg(''); if (!lastError) sMsg(''); }
   }
-  var pendingImport = null;
-  function closeConfirm() { pendingImport = null; if (ui) ui.confirmBox.classList.remove('open'); }
+  var pendingImport = null, pendingPartial = false;
+  function closeConfirm() { pendingImport = null; pendingPartial = false; if (ui) ui.confirmBox.classList.remove('open'); }
 
   function download(text, name) {
     var blob = new Blob([text], { type: 'application/json' });
@@ -542,13 +542,20 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
       reader.onerror = function () { bMsg('Não consegui ler o arquivo.', 'err'); };
       reader.onload = function () {
         var obj; try { obj = JSON.parse(String(reader.result)); } catch (e) { obj = null; }
-        if (!obj || obj.app !== 'skilltree' || !obj.data || typeof obj.data !== 'object') { bMsg('Arquivo inválido. Use um backup exportado por este app.', 'err'); return; }
+        if (!obj || (obj.app !== 'skilltree' && obj.app !== 'skilltree-partial') || !obj.data || typeof obj.data !== 'object') { bMsg('Arquivo inválido. Use um backup exportado por este app.', 'err'); return; }
         var entries = {}, n = 0;
         Object.keys(obj.data).forEach(function (k) { if (k.indexOf(PREFIX) === 0 && typeof obj.data[k] === 'string') { entries[k] = obj.data[k]; n++; } });
         if (!n) { bMsg('O backup não contém dados válidos.', 'err'); return; }
         pendingImport = entries;
+        // Importação parcial: o arquivo traz só alguns blocos (ex.: habilidades) e troca apenas esses; o resto fica intacto
+        pendingPartial = obj.app === 'skilltree-partial' || obj.partial === true;
         var when = '';
         if (obj.exportedAt) { var d = new Date(obj.exportedAt); if (!isNaN(d)) when = ' de ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear(); }
+        if (pendingPartial) {
+          ui.confirmText.textContent = 'Importação parcial' + (obj.label ? ' (' + String(obj.label).slice(0, 60) + ')' : '') + when + ': substitui apenas ' + n + ' ite' + (n === 1 ? 'm' : 'ns') + '. Todo o resto (status, jogos, finanças etc.) fica como está' + (S.session ? ', também na nuvem' : '') + '.';
+          ui.confirmBox.classList.add('open');
+          return;
+        }
         ui.confirmText.textContent = 'Backup' + when + ' com ' + n + ' ite' + (n === 1 ? 'm' : 'ns') + '. Isso substitui todos os dados deste aparelho' + (S.session ? ' (e, com a sincronização ligada, também os da nuvem)' : '') + '. Exporte antes se quiser guardar os atuais.';
         ui.confirmBox.classList.add('open');
       };
@@ -557,9 +564,9 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     $('stbk-cancel').addEventListener('click', function () { closeConfirm(); bMsg(''); });
     $('stbk-ok').addEventListener('click', function () {
       if (!pendingImport) return;
-      var entries = pendingImport, old = localMap();
+      var entries = pendingImport, old = localMap(), partial = pendingPartial;
       try {
-        Object.keys(old).forEach(function (k) { ls.removeItem(k); });
+        if (!partial) Object.keys(old).forEach(function (k) { ls.removeItem(k); });
         Object.keys(entries).forEach(function (k) { ls.setItem(k, entries[k]); });
       } catch (e) {
         try {
@@ -568,7 +575,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
         } catch (e2) {}
         closeConfirm(); bMsg('Não foi possível importar (armazenamento cheio). Nada foi alterado.', 'err'); return;
       }
-      closeConfirm(); bMsg('Backup importado. Recarregando…', 'ok');
+      closeConfirm(); bMsg(partial ? 'Importação parcial concluída. Recarregando…' : 'Backup importado. Recarregando…', 'ok');
       save(); reloading = true;
       setTimeout(function () { location.reload(); }, 700);
     });
