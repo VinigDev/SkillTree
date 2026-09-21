@@ -70,6 +70,11 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 @keyframes pcflow{to{stroke-dashoffset:-24}}
 .pc-ping{animation:pcping 1.1s ease-out infinite;transform-box:fill-box;transform-origin:center}
 @keyframes pcping{0%{stroke-opacity:1}100%{stroke-opacity:.2}}
+.kb-grid{background:
+  radial-gradient(ellipse 80% 60% at 20% 0%,rgba(34,211,238,.10),transparent 70%),
+  radial-gradient(ellipse 70% 60% at 100% 100%,rgba(232,121,249,.10),transparent 70%),
+  linear-gradient(90deg,rgba(34,211,238,.05) 1px,transparent 1px) 0 0/40px 40px,
+  linear-gradient(0deg,rgba(34,211,238,.05) 1px,transparent 1px) 0 0/40px 40px}
 .recharts-wrapper,.recharts-surface{outline:none}
 @media (prefers-reduced-motion:reduce){.avail,.screen-in,.drawer-in,.fade-in,.pop-in,.flow,.scan,.pc-wire.on,.pc-ping{animation:none}}
 </style>
@@ -6204,6 +6209,7 @@ var Sd = [
     { id: "pc", label: "Meu PC", icon: Yo },
     { id: "read", label: "Leituras", icon: $o },
     { id: "plan", label: "Planejamento anual", icon: Jl },
+    { id: "tasks", label: "Tarefas", icon: gf },
   ],
   w8 = "polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)";
 function dle({ tab: e, onTab: t }) {
@@ -6273,6 +6279,7 @@ function ple({ tab: e }) {
           pc: "Terminal // Rig",
           read: "Terminal // Biblioteca",
           plan: "Terminal // Planejamento",
+          tasks: "Terminal // Kanban",
         }[e],
       }),
       (0, u.jsx)("span", {
@@ -9164,7 +9171,7 @@ function ti(e, t) {
     return !1;
   }
 }
-function Od({ value: e, onChange: t, label: a, alt: r, icon: n, maxDim: o = 360, variant: i = "compact" }) {
+function Od({ value: e, onChange: t, label: a, alt: r, icon: n, maxDim: o = 360, variant: i = "compact", quality: qy = 0.82 }) {
   let l = (0, K.useRef)(null),
     [s, c] = (0, K.useState)(!1),
     [f, d] = (0, K.useState)(""),
@@ -9179,7 +9186,7 @@ function Od({ value: e, onChange: t, label: a, alt: r, icon: n, maxDim: o = 360,
         if (h) {
           (d(""), c(!0));
           try {
-            t(await Ale(h, { maxDim: o }));
+            t(await Ale(h, { maxDim: o, quality: qy }));
           } catch (y) {
             d(y && y.message ? y.message : "Falha ao ler a imagem");
           } finally {
@@ -9881,6 +9888,837 @@ function Nle({ plan: e, setPlan: t }) {
     ],
   });
 }
+// ===== TAREFAS · Kanban com vários painéis (Board -> Columns -> Cards) =====
+// Estado: kanbanBoards = [{ id, name, cover, columns: [{ id, title, color, cards: [{ id, title, desc, cover, due }] }] }]
+// Persistido em "skilltree-kanban-v1" ({ v, active, boards }) -> entra no backup e na sincronização.
+var kbPortal = (el) => {
+    try {
+      return QL().createPortal(el, document.body);
+    } catch {
+      return el;
+    }
+  },
+  KB_KEY = "skilltree-kanban-v1",
+  KB_COLORS = ["#22d3ee", "#e879f9", "#facc15", "#a3e635", "#fb923c", "#ef4444", "#60a5fa", "#34d399"],
+  kbCard = (title, x) => ({ id: Qe(), title: String(title || "").slice(0, 200), desc: "", cover: "", due: "", ...(x || {}) }),
+  kbCol = (title, color, cards) => ({ id: Qe(), title, color: color || KB_COLORS[0], cards: cards || [] }),
+  kbBoard = (name, cover, columns) => ({ id: Qe(), name, cover: cover || "", columns: columns || [] }),
+  kbDefaultCols = () => [
+    kbCol("Backlog", "#60a5fa"),
+    kbCol("Em prepara\xE7\xE3o", "#ef4444"),
+    kbCol("Em produ\xE7\xE3o", "#34d399"),
+    kbCol("Conclu\xEDdo / revis\xE3o", "#a3e635"),
+    kbCol("Conclu\xEDdo e enviado \u{1F389}", "#facc15"),
+  ];
+// Painel inicial montado a partir do quadro de referência (organização acadêmica)
+function kbSeed() {
+  let c = (t, due) => kbCard(t, due ? { due } : void 0),
+    cols = kbDefaultCols();
+  return (
+    (cols[0].cards = [
+      c("[EMPREENDENDO] Produzir plano de empreendimento em forma\xE7\xE3o pedag\xF3gica + implementa\xE7\xE3o de sistemas (MOODLE, WORDPRESS)"),
+      c("[EMPREENDENDO] Produzir planejamento de proposta para a produ\xE7\xE3o de mapa interativo por unidade + forma\xE7\xE3o para uso e atualiza\xE7\xE3o"),
+      c("[LUMI\xC9RE] Rodar o primeiro an\xFAncio e captar clientes"),
+    ]),
+    (cols[1].cards = [
+      c("[LUMI\xC9RE (CLEO)] Est\xE1gio"),
+      c("[LUMI\xC9RE (CLEO)] Acelere sua carreira", "2026-09-30"),
+      c("[TCC] Escrita do trabalho: introdu\xE7\xE3o"),
+      c("[TCC] Escrita do trabalho: resultados e discuss\xE3o"),
+      c("[TCC] Escrita do trabalho: considera\xE7\xF5es finais"),
+      c("[PROJETO CREATOR] Criar canal"),
+      c("[LUMI\xC9RE (ELLEN)] Produ\xE7\xE3o de relat\xF3rio de est\xE1gio"),
+    ]),
+    (cols[2].cards = [
+      c("[TCC] Escrita do trabalho: metodologia"),
+      c("[LUMI\xC9RE (CLEO)] Outra atividade mais simples", "2026-09-30"),
+      c("[PROJETO CREATOR] Escrever 3 roteiros"),
+    ]),
+    (cols[4].cards = [
+      c("[LUMI\xC9RE (CLEO)] Produ\xE7\xE3o do portf\xF3lio", "2026-09-30"),
+      c("[PIBID] Slide sobre interven\xE7\xE3o", "2026-09-18"),
+    ]),
+    kbBoard("Ger\xEAncia de Trabalhos e Projetos Acad\xEAmicos", "", cols)
+  );
+}
+function kbClean(list) {
+  if (!Array.isArray(list)) return null;
+  let ok = (x) => x && typeof x == "object",
+    ids = new Set(),
+    uid = (v) => {
+      let s = ge(v, 20);
+      return !s || ids.has(s) ? Qe() : (ids.add(s), s);
+    },
+    img = (v) => (/^data:image\//.test(String(v || "")) ? Ad(v) : "");
+  return list
+    .filter(ok)
+    .slice(0, 30)
+    .map((b) => ({
+      id: uid(b.id),
+      name: ge(b.name, 60) || "Painel",
+      cover: img(b.cover),
+      columns: (Array.isArray(b.columns) ? b.columns : [])
+        .filter(ok)
+        .slice(0, 30)
+        .map((c, ci) => ({
+          id: uid(c.id),
+          title: ge(c.title, 60),
+          color: /^#[0-9a-f]{6}$/i.test(String(c.color)) ? c.color : KB_COLORS[ci % KB_COLORS.length],
+          cards: (Array.isArray(c.cards) ? c.cards : [])
+            .filter(ok)
+            .slice(0, 300)
+            .map((k) => ({
+              id: uid(k.id),
+              title: ge(k.title, 200),
+              desc: ge(k.desc, 5e3),
+              cover: img(k.cover),
+              due: /^\d{4}-\d{2}-\d{2}$/.test(String(k.due)) ? k.due : "",
+            })),
+        })),
+    }));
+}
+var kbLoadC = null;
+function kbLoad() {
+  // em cache: os dois useState(() => kbLoad()...) precisam do MESMO painel semeado (mesmos ids)
+  if (kbLoadC) return kbLoadC;
+  return (kbLoadC = kbLoad0());
+}
+function kbLoad0() {
+  try {
+    let raw = localStorage.getItem(KB_KEY);
+    if (raw !== null) {
+      let o = JSON.parse(raw),
+        boards = kbClean(o && o.boards) || [];
+      return { boards, active: boards.some((b) => b.id === (o && o.active)) ? o.active : boards[0] ? boards[0].id : "" };
+    }
+  } catch {}
+  let s = kbSeed();
+  return { boards: [s], active: s.id };
+}
+// Movimento imutável de um cartão (entre colunas ou dentro da mesma), atualizando o objeto aninhado em profundidade
+function kbMoveCard(boards, boardId, cardId, toColId, toIndex) {
+  return boards.map((b) => {
+    if (b.id !== boardId) return b;
+    let card = null,
+      fromCol = null,
+      fromIdx = -1;
+    if (
+      (b.columns.forEach((c) => {
+        let i = c.cards.findIndex((x) => x.id === cardId);
+        i >= 0 && ((card = c.cards[i]), (fromCol = c.id), (fromIdx = i));
+      }),
+      !card || !b.columns.some((c) => c.id === toColId))
+    )
+      return b;
+    let ti = toIndex == null ? 1e9 : toIndex;
+    fromCol === toColId && fromIdx < ti && (ti -= 1);
+    if (fromCol === toColId && ti === fromIdx) return b;
+    let cols = b.columns.map((c) => (c.id === fromCol ? { ...c, cards: c.cards.filter((x) => x.id !== cardId) } : c));
+    return {
+      ...b,
+      columns: cols.map((c) => {
+        if (c.id !== toColId) return c;
+        let j = Math.max(0, Math.min(c.cards.length, ti));
+        return { ...c, cards: [...c.cards.slice(0, j), card, ...c.cards.slice(j)] };
+      }),
+    };
+  });
+}
+var kbFmtDue = (d) => {
+    let [y, m, dd] = String(d).split("-");
+    return y && m && dd ? `${dd}/${m}` : d;
+  },
+  kbDueState = (d, done) => {
+    if (!d) return "";
+    let t = new Date(),
+      today = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+    return done ? "done" : d < today ? "late" : d === today ? "today" : "ok";
+  },
+  KB_DUE_CLS = {
+    late: "border-red-500/80 bg-red-500/15 text-red-300",
+    today: "border-yellow-400/80 bg-yellow-400/15 text-yellow-200",
+    ok: "border-cyan-500/50 bg-cyan-500/10 text-cyan-200",
+    done: "border-lime-400/70 bg-lime-400/15 text-lime-200",
+  },
+  KB_CUT = "polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px)";
+// ---- modal: criar / editar painel ----
+function KbBoardModal({ board, onSave, onDelete, onClose }) {
+  let edit = !!board,
+    [name, setName] = (0, K.useState)(edit ? board.name : ""),
+    [cover, setCover] = (0, K.useState)(edit ? board.cover : ""),
+    [preset, setPreset] = (0, K.useState)(!0),
+    [err, setErr] = (0, K.useState)(""),
+    [delAsk, setDelAsk] = (0, K.useState)(!1),
+    save = () => {
+      if (!name.trim()) return setErr("D\xEA um nome ao painel.");
+      (onSave({ name: name.trim().slice(0, 60), cover, preset }), onClose());
+    };
+  (0, K.useEffect)(() => {
+    let k = (ev) => {
+      ev.key === "Escape" && onClose();
+    };
+    return (window.addEventListener("keydown", k), () => window.removeEventListener("keydown", k));
+  }, [onClose]);
+  return HX(
+    "div",
+    { className: "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6", role: "dialog", "aria-modal": "true", "aria-label": edit ? "Editar painel" : "Novo painel" },
+    HX("button", { className: "fade-in absolute inset-0 cursor-default bg-black/70 backdrop-blur-[2px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX(
+      "div",
+      { className: "pop-in relative w-full max-w-lg" },
+      HX("div", { className: "absolute inset-0 bg-cyan-400/80", style: { clipPath: it } }),
+      HX("div", { className: "absolute bg-[#0b0d14]/95", style: { inset: 1.5, clipPath: it } }),
+      HX(
+        "div",
+        { className: "relative p-5" },
+        HX(
+          "div",
+          { className: "flex items-start justify-between gap-3 border-b border-cyan-900/60 pb-3" },
+          HX(
+            "div",
+            {},
+            HX("div", { className: "text-[9px] tracking-[0.35em] text-cyan-500/80" }, "KANBAN//PAINEL"),
+            HX("h2", { className: "text-xl font-bold uppercase tracking-[0.12em] text-yellow-400" }, edit ? "Editar painel" : "Novo painel"),
+          ),
+          HX("button", { onClick: onClose, "aria-label": "Fechar", className: "p-1.5 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" }, HX(Da, { size: 20 })),
+        ),
+        // pré-visualização da capa com o overlay escuro usado no painel
+        HX(
+          "div",
+          {
+            className: "relative mt-4 h-32 overflow-hidden border border-cyan-500/40 bg-[#0a0d16] bg-cover bg-center",
+            style: cover ? { backgroundImage: `url(${cover})` } : void 0,
+            "data-kb-cover-preview": !0,
+          },
+          HX("div", { className: `absolute inset-0 ${cover ? "bg-black/60" : "kb-grid"}` }),
+          HX(
+            "span",
+            { className: "absolute bottom-2 left-3 text-[13px] font-bold uppercase tracking-[0.15em] text-cyan-100" },
+            name.trim() || "Nome do painel",
+          ),
+        ),
+        HX(
+          "label",
+          { className: "mt-4 block" },
+          HX("span", { className: HLBL }, "Nome do painel"),
+          HX("input", {
+            autoFocus: !0,
+            "aria-label": "Nome do painel",
+            value: name,
+            maxLength: 60,
+            placeholder: "Ex.: Trabalhos acad\xEAmicos",
+            onChange: (ev) => (setName(ev.target.value), setErr("")),
+            onKeyDown: (ev) => {
+              ev.key === "Enter" && save();
+            },
+            className: HIN,
+          }),
+        ),
+        HX(
+          "div",
+          { className: "mt-3" },
+          HX("span", { className: HLBL }, "Imagem de capa (fundo do painel)"),
+          HX(Od, { variant: "full", value: cover, onChange: setCover, label: "Imagem de capa do painel", maxDim: 1600, quality: 0.72 }),
+        ),
+        !edit &&
+          HX(
+            "label",
+            { className: "mt-3 flex cursor-pointer items-center gap-2 text-[12px] uppercase tracking-wider text-cyan-200" },
+            HX("input", { type: "checkbox", checked: preset, onChange: (ev) => setPreset(ev.target.checked), className: "h-4 w-4 accent-cyan-400" }),
+            "Come\xE7ar com colunas padr\xE3o (Backlog → Conclu\xEDdo)",
+          ),
+        HX(
+          "div",
+          { className: "mt-5 flex flex-wrap items-center justify-between gap-3" },
+          edit && onDelete
+            ? delAsk
+              ? HX(HBtn, { tone: "danger", onClick: () => (onDelete(), onClose()), label: "Confirmar exclus\xE3o do painel" }, HX(yt, { size: 13 }), "Excluir painel e cart\xF5es")
+              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir painel" }, HX(yt, { size: 13 }), "Excluir painel")
+            : HX("span", { className: "text-[12px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+          HX(ye, { variant: "primary", onClick: save }, HX(edit ? ls : gt, { size: 15, strokeWidth: 2.5 }), edit ? "Salvar" : "Criar painel"),
+        ),
+        edit && err && HX("p", { className: "mt-2 text-[12px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+      ),
+    ),
+  );
+}
+// ---- modal: editar cartão (edição ao vivo, salva automaticamente) ----
+function KbCardModal({ board, cardId, onUpdate, onMove, onDelete, onClose }) {
+  let col = board.columns.find((c) => c.cards.some((k) => k.id === cardId)),
+    card = col && col.cards.find((k) => k.id === cardId),
+    [delAsk, setDelAsk] = (0, K.useState)(!1);
+  (0, K.useEffect)(() => {
+    let k = (ev) => {
+      ev.key === "Escape" && onClose();
+    };
+    return (window.addEventListener("keydown", k), () => window.removeEventListener("keydown", k));
+  }, [onClose]);
+  if (!card) return null;
+  let set = (key, v) => onUpdate(card.id, { [key]: v }),
+    ds = kbDueState(card.due);
+  return HX(
+    "div",
+    { className: "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6", role: "dialog", "aria-modal": "true", "aria-label": "Editar cart\xE3o" },
+    HX("button", { className: "fade-in absolute inset-0 cursor-default bg-black/70 backdrop-blur-[2px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX(
+      "div",
+      { className: "pop-in relative flex max-h-full w-full max-w-2xl flex-col" },
+      HX("div", { className: "absolute inset-0", style: { clipPath: it, background: col.color } }),
+      HX("div", { className: "absolute bg-[#0b0d14]/95", style: { inset: 1.5, clipPath: it } }),
+      HX(
+        "div",
+        { className: "relative min-h-0 overflow-y-auto p-5", "data-kb-card-modal": card.id },
+        card.cover &&
+          HX("img", { src: card.cover, alt: "Capa do cart\xE3o", className: "mb-4 max-h-56 w-full border border-white/10 object-cover", draggable: !1 }),
+        HX(
+          "div",
+          { className: "flex items-start justify-between gap-3 border-b border-white/10 pb-3" },
+          HX(
+            "div",
+            { className: "min-w-0" },
+            HX(
+              "div",
+              { className: "flex items-center gap-2 text-[9px] tracking-[0.35em]", style: { color: col.color } },
+              HX("span", { className: "h-2 w-2 shrink-0", style: { background: col.color, boxShadow: `0 0 6px ${col.color}` } }),
+              `KANBAN//${String(col.title || "COLUNA").toUpperCase()}`,
+            ),
+            HX("h2", { className: "text-lg font-bold uppercase tracking-[0.12em] text-yellow-400" }, "Cart\xE3o de tarefa"),
+          ),
+          HX("button", { onClick: onClose, "aria-label": "Fechar", className: "p-1.5 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" }, HX(Da, { size: 20 })),
+        ),
+        HX(
+          "label",
+          { className: "mt-4 block" },
+          HX("span", { className: HLBL }, "T\xEDtulo da tarefa"),
+          HX("input", {
+            autoFocus: !0,
+            "aria-label": "T\xEDtulo da tarefa",
+            value: card.title,
+            maxLength: 200,
+            placeholder: "O que precisa ser feito?",
+            onChange: (ev) => set("title", ev.target.value.slice(0, 200)),
+            className: `${HIN} text-[15px] font-semibold text-cyan-50`,
+          }),
+        ),
+        HX(
+          "label",
+          { className: "mt-3 block" },
+          HX("span", { className: HLBL }, "Descri\xE7\xE3o"),
+          HX("textarea", {
+            "aria-label": "Descri\xE7\xE3o da tarefa",
+            value: card.desc,
+            rows: 7,
+            maxLength: 5e3,
+            placeholder: "Detalhes, links, checklist…",
+            onChange: (ev) => set("desc", ev.target.value.slice(0, 5e3)),
+            className: `${HIN} resize-y leading-relaxed`,
+          }),
+        ),
+        HX(
+          "div",
+          { className: "mt-3 grid gap-3 sm:grid-cols-2" },
+          HX(
+            "label",
+            { className: "block" },
+            HX("span", { className: HLBL }, "Coluna"),
+            HX(
+              "select",
+              {
+                "aria-label": "Mover para a coluna",
+                value: col.id,
+                onChange: (ev) => onMove(card.id, ev.target.value),
+                className: `${HIN} cursor-pointer [&>option]:bg-zinc-950`,
+              },
+              ...board.columns.map((c) => HX("option", { key: c.id, value: c.id }, c.title || "Sem t\xEDtulo")),
+            ),
+          ),
+          HX(
+            "label",
+            { className: "block" },
+            HX("span", { className: HLBL }, "Prazo (opcional)"),
+            HX(
+              "span",
+              { className: "flex items-center gap-2" },
+              HX("input", {
+                type: "date",
+                "aria-label": "Prazo",
+                value: card.due,
+                onChange: (ev) => set("due", ev.target.value),
+                className: `${HIN} font-orbit text-[13px]`,
+              }),
+              ds === "late" && HX("span", { className: "shrink-0 text-[10px] font-bold uppercase tracking-wider text-red-400" }, "Atrasado"),
+            ),
+          ),
+        ),
+        HX(
+          "div",
+          { className: "mt-3" },
+          HX("span", { className: HLBL }, "Imagem de capa do cart\xE3o"),
+          HX(Od, { variant: "full", value: card.cover, onChange: (v) => set("cover", v), label: "Imagem de capa do cart\xE3o", maxDim: 720, quality: 0.75 }),
+        ),
+        HX(
+          "div",
+          { className: "mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4" },
+          delAsk
+            ? HX(
+                "span",
+                { className: "flex items-center gap-2" },
+                HX(HBtn, { tone: "danger", onClick: () => (onDelete(card.id), onClose()), label: "Confirmar exclus\xE3o do cart\xE3o" }, HX(yt, { size: 13 }), "Excluir de vez"),
+                HX(HBtn, { onClick: () => setDelAsk(!1), label: "Cancelar" }, "Cancelar"),
+              )
+            : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir cart\xE3o" }, HX(yt, { size: 13 }), "Excluir cart\xE3o"),
+          HX("span", { className: "text-[10px] uppercase tracking-widest text-cyan-400/70" }, "Salvo automaticamente"),
+          HX(ye, { variant: "primary", onClick: onClose }, "Concluir"),
+        ),
+      ),
+    ),
+  );
+}
+// ---- cartão na coluna (arrastável) ----
+function KbCard({ card, colId, lastCol, dragging, onDragStart, onDragEnd, onOpen }) {
+  let ds = kbDueState(card.due, lastCol);
+  return HX(
+    "article",
+    {
+      draggable: !0,
+      onDragStart: (ev) => onDragStart(ev, card.id, colId),
+      onDragEnd,
+      onClick: () => onOpen(card.id),
+      onKeyDown: (ev) => {
+        (ev.key === "Enter" || ev.key === " ") && (ev.preventDefault(), onOpen(card.id));
+      },
+      role: "button",
+      tabIndex: 0,
+      "aria-label": `Cart\xE3o: ${card.title || "sem t\xEDtulo"}. Abrir edi\xE7\xE3o. Arraste para mover.`,
+      "data-kb-card": card.id,
+      className: `group/kc relative cursor-grab select-none overflow-hidden border bg-zinc-950/85 transition-all duration-150 active:cursor-grabbing hover:-translate-y-[1px] hover:border-cyan-400/70 hover:shadow-[0_0_14px_rgba(34,211,238,.25)] focus-visible:border-cyan-400 focus-visible:outline-none ${dragging ? "border-cyan-400/80 opacity-50" : "border-white/10"}`,
+    },
+    card.cover && HX("img", { src: card.cover, alt: "", draggable: !1, className: "block h-28 w-full object-cover", "data-kb-card-cover": !0 }),
+    HX(
+      "div",
+      { className: "px-2.5 py-2" },
+      HX("p", { className: "whitespace-pre-line break-words text-[13px] font-semibold leading-snug text-zinc-100" }, card.title || "Sem t\xEDtulo"),
+      (card.due || card.desc) &&
+        HX(
+          "div",
+          { className: "mt-1.5 flex flex-wrap items-center gap-1.5" },
+          card.due &&
+            HX(
+              "span",
+              { className: `inline-flex items-center gap-1 border px-1.5 py-[1px] font-orbit text-[10px] ${KB_DUE_CLS[ds]}`, "data-kb-due": ds },
+              HX(ds === "done" ? Wn : xf, { size: 10 }),
+              kbFmtDue(card.due),
+            ),
+          card.desc && HX("span", { className: "text-cyan-300/70", title: "Tem descri\xE7\xE3o" }, HX(ud, { size: 13 })),
+        ),
+    ),
+  );
+}
+// ---- página ----
+function KanbanPage({ boards, setBoards, active, setActive }) {
+  let b = boards.find((x) => x.id === active) || boards[0],
+    [modal, setModal] = (0, K.useState)(null),
+    [drag, setDrag] = (0, K.useState)(null),
+    [over, setOver] = (0, K.useState)(null),
+    [menuCol, setMenuCol] = (0, K.useState)(null),
+    [delColAsk, setDelColAsk] = (0, K.useState)(null),
+    [editCol, setEditCol] = (0, K.useState)(null),
+    [composer, setComposer] = (0, K.useState)(null),
+    [draft, setDraft] = (0, K.useState)(""),
+    [newCol, setNewCol] = (0, K.useState)(null),
+    dragRef = (0, K.useRef)(null),
+    colsRef = (0, K.useRef)(null),
+    updBoard = (fn) => setBoards((bs) => bs.map((x) => (x.id === b.id ? fn(x) : x))),
+    updCol = (cid, fn) => updBoard((x) => ({ ...x, columns: x.columns.map((c) => (c.id === cid ? fn(c) : c)) })),
+    updCard = (kid, patch) =>
+      updBoard((x) => ({
+        ...x,
+        columns: x.columns.map((c) =>
+          c.cards.some((k) => k.id === kid) ? { ...c, cards: c.cards.map((k) => (k.id === kid ? { ...k, ...patch } : k)) } : c,
+        ),
+      })),
+    delCard = (kid) => updBoard((x) => ({ ...x, columns: x.columns.map((c) => ({ ...c, cards: c.cards.filter((k) => k.id !== kid) })) })),
+    moveCard = (kid, toCol, idx) => setBoards((bs) => kbMoveCard(bs, b.id, kid, toCol, idx)),
+    stats = (0, K.useMemo)(
+      () => (b ? { cols: b.columns.length, cards: b.columns.reduce((n, c) => n + c.cards.length, 0) } : { cols: 0, cards: 0 }),
+      [b],
+    ),
+    addCard = (cid) => {
+      let t = draft.trim();
+      t && (updCol(cid, (c) => ({ ...c, cards: [...c.cards, kbCard(t)] })), setDraft(""));
+    },
+    addColumn = () => {
+      let t = String(newCol || "").trim();
+      if (!t) return setNewCol(null);
+      (updBoard((x) => ({ ...x, columns: [...x.columns, kbCol(t.slice(0, 60), KB_COLORS[x.columns.length % KB_COLORS.length])] })),
+        setNewCol(""),
+        setTimeout(() => colsRef.current && colsRef.current.scrollTo({ left: colsRef.current.scrollWidth, behavior: "smooth" }), 60));
+    },
+    shiftCol = (cid, dir) =>
+      updBoard((x) => {
+        let a = x.columns.slice(),
+          i = a.findIndex((c) => c.id === cid),
+          j = i + dir;
+        return j < 0 || j >= a.length ? x : (([a[i], a[j]] = [a[j], a[i]]), { ...x, columns: a });
+      }),
+    // ---- Drag and Drop (HTML5 nativo) ----
+    onDragStart = (ev, kid, cid) => {
+      try {
+        (ev.dataTransfer.setData("text/plain", kid), (ev.dataTransfer.effectAllowed = "move"));
+      } catch {}
+      ((dragRef.current = { cardId: kid, fromCol: cid }), setDrag({ cardId: kid, fromCol: cid }), setMenuCol(null));
+    },
+    onDragEnd = () => {
+      ((dragRef.current = null), setDrag(null), setOver(null));
+    },
+    // índice de inserção pela posição vertical do ponteiro em relação ao meio de cada cartão da coluna
+    dropIndex = (listEl, y) => {
+      let cards = listEl ? [...listEl.querySelectorAll("[data-kb-card]")] : [],
+        i = cards.findIndex((el) => {
+          let r = el.getBoundingClientRect();
+          return y < r.top + r.height / 2;
+        });
+      return i < 0 ? cards.length : i;
+    },
+    onColDragOver = (ev, cid) => {
+      if (!dragRef.current) return;
+      (ev.preventDefault(), (ev.dataTransfer.dropEffect = "move"));
+      let idx = dropIndex(ev.currentTarget.querySelector("[data-kb-list]"), ev.clientY);
+      setOver((o) => (o && o.colId === cid && o.index === idx ? o : { colId: cid, index: idx }));
+    },
+    onColDragLeave = (ev, cid) => {
+      ev.currentTarget.contains(ev.relatedTarget) || setOver((o) => (o && o.colId === cid ? null : o));
+    },
+    onColDrop = (ev, cid) => {
+      ev.preventDefault();
+      let d = dragRef.current,
+        kid = (d && d.cardId) || (ev.dataTransfer && ev.dataTransfer.getData("text/plain"));
+      kid && moveCard(kid, cid, dropIndex(ev.currentTarget.querySelector("[data-kb-list]"), ev.clientY));
+      onDragEnd();
+    };
+  (0, K.useEffect)(() => {
+    (setMenuCol(null), setComposer(null), setNewCol(null), setEditCol(null), setDelColAsk(null));
+  }, [b && b.id]);
+  let boardModal =
+      modal &&
+      (modal.kind === "newBoard" || modal.kind === "editBoard") &&
+      HX(KbBoardModal, {
+        key: modal.kind,
+        board: modal.kind === "editBoard" ? b : null,
+        onClose: () => setModal(null),
+        onSave: ({ name, cover, preset }) => {
+          if (modal.kind === "editBoard") return updBoard((x) => ({ ...x, name, cover }));
+          let nb = kbBoard(name, cover, preset ? kbDefaultCols() : []);
+          (setBoards((bs) => [...bs, nb]), setActive(nb.id));
+        },
+        onDelete:
+          modal.kind === "editBoard"
+            ? () => {
+                let rest = boards.filter((x) => x.id !== b.id);
+                (setBoards(rest), setActive(rest[0] ? rest[0].id : ""));
+              }
+            : void 0,
+      }),
+    head = HX(Pd, {
+      icon: gf,
+      title: "Tarefas",
+      sub: b ? `${b.name} \xB7 ${stats.cols} coluna${stats.cols === 1 ? "" : "s"} \xB7 ${stats.cards} cart\xE3o${stats.cards === 1 ? "" : "es"}` : "Kanban \xB7 pain\xE9is de tarefas",
+    });
+  if (!b)
+    return HX(
+      "div",
+      { className: "flex min-h-0 flex-1 flex-col px-4 pb-4 sm:px-8", "data-kanban": !0 },
+      head,
+      HX(
+        "div",
+        { className: "flex flex-1 flex-col items-center justify-center gap-4 border border-dashed border-cyan-500/40 bg-black/30 p-8 text-center" },
+        HX(gf, { size: 40, className: "text-cyan-400/70" }),
+        HX("p", { className: "text-[13px] uppercase tracking-[0.2em] text-cyan-200/80" }, "Nenhum painel \xB7 crie o primeiro"),
+        HX(ye, { variant: "primary", onClick: () => setModal({ kind: "newBoard" }) }, HX(gt, { size: 15, strokeWidth: 3 }), "Criar painel"),
+      ),
+      boardModal && kbPortal(boardModal),
+    );
+  let lastColId = b.columns.length ? b.columns[b.columns.length - 1].id : null;
+  return HX(
+    "div",
+    { className: "flex min-h-0 flex-1 flex-col px-4 pb-4 sm:px-8", "data-kanban": !0 },
+    head,
+    // ---- seletor de painéis ----
+    HX(
+      "div",
+      { className: "mb-3 flex flex-wrap items-center gap-2" },
+      HX(
+        "div",
+        { className: "flex min-w-0 flex-1 basis-full items-center gap-2 overflow-x-auto pb-1 sm:basis-auto", role: "tablist", "aria-label": "Pain\xE9is" },
+        ...boards.map((x) =>
+          HX(
+            "button",
+            {
+              key: x.id,
+              type: "button",
+              role: "tab",
+              "aria-selected": x.id === b.id,
+              onClick: () => setActive(x.id),
+              "data-kb-board": x.id,
+              className: `relative flex h-11 shrink-0 items-center gap-2 overflow-hidden border px-3 pr-4 text-[11px] font-semibold uppercase tracking-widest transition-all ${x.id === b.id ? "border-cyan-400 text-cyan-100 shadow-[0_0_14px_rgba(34,211,238,.35)]" : "border-white/15 text-zinc-300 hover:border-cyan-500/60"}`,
+              style: { clipPath: KB_CUT },
+            },
+            HX("span", {
+              className: "absolute inset-0 bg-cover bg-center opacity-60",
+              style: x.cover ? { backgroundImage: `url(${x.cover})` } : { background: "linear-gradient(120deg,#0e1a2b,#1b0b1f)" },
+            }),
+            HX("span", { className: `absolute inset-0 ${x.id === b.id ? "bg-cyan-950/55" : "bg-black/65"}` }),
+            HX("span", { className: "relative max-w-[210px] truncate" }, x.name),
+          ),
+        ),
+      ),
+      HX(HBtn, { onClick: () => setModal({ kind: "editBoard" }), label: "Editar painel (nome e capa)" }, HX(ns, { size: 13 }), "Editar painel"),
+      HX(HBtn, { tone: "primary", onClick: () => setModal({ kind: "newBoard" }), label: "Criar novo painel" }, HX(gt, { size: 13, strokeWidth: 3 }), "Novo painel"),
+    ),
+    // ---- área do painel (capa + overlay escuro) ----
+    HX(
+      "div",
+      {
+        className: "relative min-h-[420px] flex-1 overflow-hidden border border-cyan-500/30 bg-[#070910] bg-cover bg-center",
+        style: b.cover ? { backgroundImage: `url(${b.cover})` } : void 0,
+        "data-kb-canvas": b.id,
+      },
+      HX("div", { className: `pointer-events-none absolute inset-0 ${b.cover ? "bg-black/60" : "kb-grid"}` }),
+      HX(
+        "div",
+        {
+          ref: colsRef,
+          className: "relative flex h-full items-start gap-3 overflow-x-auto overflow-y-hidden p-3 max-sm:snap-x max-sm:snap-mandatory",
+          "data-kb-columns": !0,
+        },
+        ...b.columns.map((c, ci) => {
+          let isOver = over && over.colId === c.id,
+            ins = isOver ? over.index : -1;
+          return HX(
+            "section",
+            {
+              key: c.id,
+              "aria-label": `Coluna ${c.title}`,
+              "data-kb-col": c.id,
+              onDragOver: (ev) => onColDragOver(ev, c.id),
+              onDragLeave: (ev) => onColDragLeave(ev, c.id),
+              onDrop: (ev) => onColDrop(ev, c.id),
+              className: `flex max-h-full w-[min(85vw,290px)] shrink-0 snap-start flex-col border backdrop-blur-md transition-colors duration-150 ${isOver ? "border-cyan-300/80 bg-cyan-950/70 ring-2 ring-cyan-400/60" : "border-white/10 bg-zinc-900/80"}`,
+              style: { borderTop: `3px solid ${c.color}`, boxShadow: `0 -3px 16px -4px ${c.color}` },
+            },
+            // cabeçalho
+            HX(
+              "div",
+              { className: "relative flex items-center gap-2 px-3 pb-2 pt-2.5" },
+              editCol === c.id
+                ? HX("input", {
+                    autoFocus: !0,
+                    "aria-label": "Nome da coluna",
+                    defaultValue: c.title,
+                    maxLength: 60,
+                    onBlur: (ev) => (updCol(c.id, (x) => ({ ...x, title: ev.target.value.trim() || x.title })), setEditCol(null)),
+                    onKeyDown: (ev) => {
+                      (ev.key === "Enter" && ev.currentTarget.blur(), ev.key === "Escape" && setEditCol(null));
+                    },
+                    className: `${HIN} py-1 text-[12px] font-bold uppercase tracking-wider`,
+                  })
+                : HX(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: () => setEditCol(c.id),
+                      title: "Clique para renomear",
+                      className: "min-w-0 flex-1 truncate text-left text-[12px] font-bold uppercase tracking-[0.14em]",
+                      style: { color: c.color, textShadow: `0 0 8px ${c.color}66` },
+                      "data-kb-col-title": !0,
+                    },
+                    c.title || "Sem t\xEDtulo",
+                  ),
+              HX("span", { className: "shrink-0 font-orbit text-[11px] text-zinc-400", "data-kb-count": !0 }, c.cards.length),
+              HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => (setMenuCol((m) => (m === c.id ? null : c.id)), setDelColAsk(null)),
+                  "aria-label": `Op\xE7\xF5es da coluna ${c.title}`,
+                  "aria-expanded": menuCol === c.id,
+                  className: "shrink-0 px-1 text-[16px] font-bold leading-none text-zinc-400 transition-colors hover:text-cyan-300",
+                },
+                "⋯",
+              ),
+              menuCol === c.id &&
+                HX(
+                  "div",
+                  { className: "absolute right-2 top-full z-20 w-56 border border-cyan-500/50 bg-[#0b0d14]/95 p-3 shadow-[0_0_20px_rgba(0,0,0,.6)] backdrop-blur", "data-kb-col-menu": !0 },
+                  HX("div", { className: HLBL }, "Cor da coluna"),
+                  HX(
+                    "div",
+                    { className: "flex flex-wrap gap-1.5" },
+                    ...KB_COLORS.map((col) =>
+                      HX("button", {
+                        key: col,
+                        type: "button",
+                        "aria-label": `Cor ${col}`,
+                        onClick: () => updCol(c.id, (x) => ({ ...x, color: col })),
+                        className: `h-6 w-6 border-2 transition-transform hover:scale-110 ${c.color === col ? "border-white" : "border-transparent"}`,
+                        style: { background: col, boxShadow: `0 0 8px ${col}` },
+                      }),
+                    ),
+                  ),
+                  HX(
+                    "div",
+                    { className: "mt-3 flex gap-1.5" },
+                    HX(HBtn, { onClick: () => shiftCol(c.id, -1), label: "Mover coluna para a esquerda", className: "flex-1 px-1" }, "← Mover"),
+                    HX(HBtn, { onClick: () => shiftCol(c.id, 1), label: "Mover coluna para a direita", className: "flex-1 px-1" }, "Mover →"),
+                  ),
+                  HX(
+                    "div",
+                    { className: "mt-2" },
+                    delColAsk === c.id
+                      ? HX(
+                          HBtn,
+                          {
+                            tone: "danger",
+                            className: "w-full",
+                            onClick: () => (updBoard((x) => ({ ...x, columns: x.columns.filter((y) => y.id !== c.id) })), setMenuCol(null), setDelColAsk(null)),
+                            label: "Confirmar exclus\xE3o da coluna",
+                          },
+                          c.cards.length ? `Excluir com ${c.cards.length} cart\xE3o${c.cards.length === 1 ? "" : "es"}` : "Confirmar exclus\xE3o",
+                        )
+                      : HX(HBtn, { className: "w-full", onClick: () => setDelColAsk(c.id), label: "Excluir coluna" }, HX(yt, { size: 13 }), "Excluir coluna"),
+                  ),
+                ),
+            ),
+            // lista de cartões (área de soltura)
+            HX(
+              "div",
+              { className: "min-h-[56px] flex-1 space-y-2 overflow-y-auto px-2 pb-2", "data-kb-list": !0 },
+              ...c.cards.flatMap((k, ki) => [
+                ins === ki && HX("div", { key: `ph-${ki}`, className: "h-1 bg-cyan-400 shadow-[0_0_10px_#22d3ee]", "data-kb-drop": !0 }),
+                HX(KbCard, {
+                  key: k.id,
+                  card: k,
+                  colId: c.id,
+                  lastCol: c.id === lastColId,
+                  dragging: !!drag && drag.cardId === k.id,
+                  onDragStart,
+                  onDragEnd,
+                  onOpen: (kid) => setModal({ kind: "card", cardId: kid }),
+                }),
+              ]),
+              c.cards.length > 0 &&
+                ins === c.cards.length &&
+                HX("div", { key: "ph-end", className: "h-1 bg-cyan-400 shadow-[0_0_10px_#22d3ee]", "data-kb-drop": !0 }),
+              // coluna vazia: o mesmo elemento continua na tela durante o arraste (só muda o destaque), para o "drop" não se perder
+              c.cards.length === 0 &&
+                HX(
+                  "div",
+                  {
+                    key: "empty",
+                    "data-kb-drop": isOver ? !0 : void 0,
+                    className: `border border-dashed py-4 text-center text-[10px] uppercase tracking-widest transition-colors ${isOver ? "border-cyan-400 bg-cyan-500/15 text-cyan-200" : "border-white/10 text-zinc-500"}`,
+                  },
+                  isOver ? "Soltar aqui" : "Solte cart\xF5es aqui",
+                ),
+            ),
+            // adicionar cartão
+            HX(
+              "div",
+              { className: "border-t border-white/5 p-2" },
+              composer === c.id
+                ? HX(
+                    "div",
+                    { className: "space-y-2" },
+                    HX("textarea", {
+                      autoFocus: !0,
+                      rows: 3,
+                      "aria-label": "T\xEDtulo do novo cart\xE3o",
+                      value: draft,
+                      maxLength: 200,
+                      placeholder: "T\xEDtulo do cart\xE3o… (Enter para adicionar)",
+                      onChange: (ev) => setDraft(ev.target.value.slice(0, 200)),
+                      onKeyDown: (ev) => {
+                        (ev.key === "Enter" && !ev.shiftKey && (ev.preventDefault(), addCard(c.id)),
+                          ev.key === "Escape" && (setComposer(null), setDraft("")));
+                      },
+                      className: `${HIN} resize-none text-[13px]`,
+                    }),
+                    HX(
+                      "div",
+                      { className: "flex items-center gap-2" },
+                      HX(HBtn, { tone: "primary", onClick: () => addCard(c.id), label: "Adicionar cart\xE3o" }, "Adicionar"),
+                      HX(HBtn, { onClick: () => (setComposer(null), setDraft("")), label: "Cancelar" }, HX(Da, { size: 13 })),
+                    ),
+                  )
+                : HX(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: () => (setComposer(c.id), setDraft("")),
+                      "data-kb-add-card": c.id,
+                      className: "w-full border border-dashed border-white/15 px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400 transition-colors hover:border-cyan-400/60 hover:bg-cyan-500/10 hover:text-cyan-200",
+                    },
+                    "[ + Adicionar cart\xE3o ]",
+                  ),
+            ),
+          );
+        }),
+        // nova coluna
+        HX(
+          "div",
+          { className: "w-[min(85vw,290px)] shrink-0 snap-start" },
+          newCol !== null
+            ? HX(
+                "div",
+                { className: "space-y-2 border border-cyan-500/40 bg-zinc-900/80 p-2.5 backdrop-blur-md" },
+                HX("input", {
+                  autoFocus: !0,
+                  "aria-label": "Nome da nova coluna",
+                  value: newCol,
+                  maxLength: 60,
+                  placeholder: "Nome da coluna…",
+                  onChange: (ev) => setNewCol(ev.target.value),
+                  onKeyDown: (ev) => {
+                    (ev.key === "Enter" && addColumn(), ev.key === "Escape" && setNewCol(null));
+                  },
+                  className: `${HIN} text-[13px] uppercase tracking-wider`,
+                }),
+                HX(
+                  "div",
+                  { className: "flex gap-2" },
+                  HX(HBtn, { tone: "primary", onClick: addColumn, label: "Criar coluna" }, "Criar coluna"),
+                  HX(HBtn, { onClick: () => setNewCol(null), label: "Cancelar" }, HX(Da, { size: 13 })),
+                ),
+              )
+            : HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => setNewCol(""),
+                  "data-kb-add-col": !0,
+                  className: "flex w-full items-center justify-center gap-2 border border-dashed border-cyan-500/50 bg-black/40 px-3 py-3 text-[12px] font-bold uppercase tracking-[0.18em] text-cyan-300 backdrop-blur-md transition-colors hover:bg-cyan-500/15",
+                },
+                HX(gt, { size: 14, strokeWidth: 3 }),
+                "Adicionar coluna",
+              ),
+        ),
+      ),
+    ),
+    modal &&
+      modal.kind === "card" &&
+      kbPortal(
+        HX(KbCardModal, {
+          board: b,
+          cardId: modal.cardId,
+          onUpdate: updCard,
+          onMove: (kid, cid) => moveCard(kid, cid, null),
+          onDelete: delCard,
+          onClose: () => setModal(null),
+        }),
+      ),
+    boardModal && kbPortal(boardModal),
+  );
+}
 // ===== Widget de contagem regressiva (objetivo/evento) — canto superior direito do HUB, à esquerda do botão de Sincronização =====
 var CD_KEY = "skilltree-countdown-v1",
   cdTs = (e) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(e || "")) ? new Date(e).getTime() : NaN),
@@ -10193,6 +11031,9 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     [dietsS, setDietsS] = (0, K.useState)(() => M0().diets),
     [dietAct, setDietAct] = (0, K.useState)(() => M0().dietActive),
     [trainS, setTrainS] = (0, K.useState)(() => M0().train),
+    // Kanban: array de painéis (Board -> Columns -> Cards) + painel ativo
+    [kanbanBoards, setKanbanBoards] = (0, K.useState)(() => kbLoad().boards),
+    [kanbanActive, setKanbanActive] = (0, K.useState)(() => kbLoad().active),
     [U, Ie] = (0, K.useState)(Lie),
     [ue, be] = (0, K.useState)(null),
     [xe, Te] = (0, K.useState)(null),
@@ -10277,6 +11118,9 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     (0, K.useEffect)(() => {
       ti(V8, U);
     }, [U]),
+    (0, K.useEffect)(() => {
+      ti(KB_KEY, { v: 1, active: kanbanActive, boards: kanbanBoards }) || b(!0);
+    }, [kanbanBoards, kanbanActive]),
     (0, K.useEffect)(() => {
       let $ = {
         pages: L.map((J) => {
@@ -10860,6 +11704,13 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
             n === "pc" && (0, u.jsx)(ble, { setup: w, setSetup: g }),
             n === "read" && (0, u.jsx)(yle, { pages: L, setPages: h, bg: y, setBg: S }),
             n === "plan" && (0, u.jsx)(Nle, { plan: A, setPlan: _ }),
+            n === "tasks" &&
+              (0, u.jsx)(KanbanPage, {
+                boards: kanbanBoards,
+                setBoards: setKanbanBoards,
+                active: kanbanActive,
+                setActive: setKanbanActive,
+              }),
           ],
         },
         Ir ? i : n,
