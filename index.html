@@ -11407,12 +11407,16 @@ function HabitsPage({ habits, setHabits, today }) {
 }
 // ===== Contagens regressivas (até CD_MAX objetivos) — canto superior direito do HUB, à esquerda do botão de Sincronização =====
 // Estado GLOBAL (y2): countdowns = [{ id, name, date: "AAAA-MM-DDTHH:MM" (hora local), icon: data URL base64 }]
+// O campo "icon" guarda a CAPA do cartão (imagem de fundo); o nome foi mantido para não quebrar backups/sincronização.
 // Persistido em "skilltree-countdown-v2" (entra no backup e na sincronização). O formato antigo (v1, 1 objetivo) é migrado.
 var CD_KEY = "skilltree-countdown-v1",
   CD2_KEY = "skilltree-countdown-v2",
   CD_MAX = 3,
   cdTs = (e) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(e || "")) ? new Date(e).getTime() : NaN),
-  cdPad = (e) => String(e).padStart(2, "0");
+  cdPad = (e) => String(e).padStart(2, "0"),
+  // capa aceita só data URL base64 de imagem (sem aspas/parênteses): seguro dentro de url("...")
+  cdCoverOk = (s) => /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(String(s || "")),
+  CD_TONE = { ok: "#22d3ee", urgent: "#facc15", expired: "#ef4444", none: "#71717a" };
 function cdParts(e) {
   let t = Math.max(0, Math.floor(e / 1e3));
   return { d: Math.floor(t / 86400), h: Math.floor((t % 86400) / 3600), m: Math.floor((t % 3600) / 60), s: t % 60 };
@@ -11438,7 +11442,7 @@ function cdClean(arr) {
         id,
         name: typeof x.name == "string" ? x.name.slice(0, 40) : "",
         date: String(x.date).slice(0, 16),
-        icon: /^data:image\//.test(String(x.icon || "")) ? Ad(x.icon) : "",
+        icon: cdCoverOk(x.icon) ? Ad(x.icon) : "",
       };
     });
 }
@@ -11539,20 +11543,18 @@ function CountdownModal({ item, now, onSave, onDelete, onClose }) {
             className: `${HIN} font-mono`,
           }),
         ),
-        // ícone (upload -> base64 comprimido)
+        // capa (upload -> base64 comprimido) + pré-visualização do cartão como aparece no Hub
         HX(
           "div",
           {},
-          HX("span", { className: HLBL }, "\xCDcone (imagem)"),
+          HX("span", { className: HLBL }, "Capa (imagem de fundo)"),
+          HX(Od, { variant: "full", value: icon, onChange: setIcon, label: "Capa do objetivo", maxDim: 720, quality: 0.8 }),
+          HX("p", { className: "mt-1 text-[11px] text-zinc-500" }, "Imagens na horizontal (paisagem) ficam melhores. O centro da imagem aparece no cart\xE3o."),
           HX(
             "div",
-            { className: "flex items-center gap-3" },
-            HX(
-              "span",
-              { className: "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-cyan-500/50 bg-black/50" },
-              icon ? HX("img", { src: icon, alt: "", className: "h-10 w-10 object-cover", "data-cd-icon-preview": !0 }) : HX(xf, { size: 18, className: "text-cyan-300/70" }),
-            ),
-            HX(Od, { variant: "full", value: icon, onChange: setIcon, label: "\xCDcone do objetivo", maxDim: 96, quality: 0.85 }),
+            { className: "mt-2", "data-cd-preview": !0 },
+            HX("span", { className: "mb-1 block text-[9px] uppercase tracking-[0.25em] text-zinc-500" }, "Pr\xE9-visualiza\xE7\xE3o"),
+            HX(CountdownCard, { item: { id: "preview", name: name.trim() || "Objetivo", date, icon }, now, preview: !0 }),
           ),
         ),
         err
@@ -11582,86 +11584,118 @@ function CountdownModal({ item, now, onSave, onDelete, onClose }) {
     ),
   );
 }
-// ---- lista compacta no canto superior direito ----
+// ---- cartão de um objetivo: a imagem enviada é o PLANO DE FUNDO de todo o cartão ----
+// Camadas: capa (bg-cover bg-center no próprio botão) -> overlay escuro em gradiente -> linhas de varredura -> texto neon.
+function CountdownCard({ item, now, onClick, preview }) {
+  let diff = cdTs(item.date) - now,
+    has = Number.isFinite(diff),
+    expired = has && diff <= 0,
+    urgent = has && !expired && diff < 864e5,
+    tone = !has ? CD_TONE.none : expired ? CD_TONE.expired : urgent ? CD_TONE.urgent : CD_TONE.ok,
+    cover = cdCoverOk(item.icon) ? item.icon : "",
+    label = item.name || "Objetivo",
+    // halo escuro colado nas letras (legível sobre qualquer imagem) + brilho neon por baixo
+    halo = "0 0 2px #000, 0 0 4px #000, 0 1px 3px #000";
+  return HX(
+    preview ? "div" : "button",
+    {
+      ...(preview
+        ? { "aria-hidden": "true" }
+        : {
+            type: "button",
+            onClick,
+            title: `${label} \xB7 ${cdFmtDate(item.date)} \xB7 clique para editar`,
+            "aria-label": `${label}: ${expired ? "evento expirado" : has ? cdText(cdParts(diff)) : "sem data"} (editar)`,
+            "data-cd-row": item.id,
+          }),
+      "data-cd-cover": cover ? "1" : "0",
+      className: `group relative flex h-8 w-full items-center overflow-hidden border bg-cover bg-center text-left text-sm leading-none shadow-[0_0_10px_-3px_var(--cd)] transition-all duration-200 max-[379px]:text-[12px] ${
+        preview
+          ? ""
+          : "cursor-pointer hover:z-10 hover:scale-105 hover:shadow-[0_0_18px_0_var(--cd)] focus-visible:z-10 focus-visible:scale-105 focus-visible:shadow-[0_0_18px_0_var(--cd)] focus-visible:outline-none"
+      } ${expired && cover ? "bg-zinc-600 bg-blend-luminosity" : "bg-[#0b0f16]"}`,
+      style: {
+        "--cd": tone,
+        borderColor: tone,
+        backgroundImage: cover ? `url("${cover}")` : "linear-gradient(120deg,#0b1220 0%,#12080b 55%,#1c0a14 100%)",
+      },
+    },
+    // overlay escuro OBRIGATÓRIO sobre a capa (clareia um pouco no hover para mostrar a imagem)
+    HX("span", {
+      "aria-hidden": "true",
+      "data-cd-overlay": !0,
+      className: "pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/30 transition-opacity duration-200 group-hover:opacity-[.82]",
+    }),
+    // linhas de varredura (textura CRT sutil)
+    HX("span", {
+      "aria-hidden": "true",
+      className: "pointer-events-none absolute inset-0 opacity-60",
+      style: { background: "repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)" },
+    }),
+    // barra neon lateral
+    HX("span", { "aria-hidden": "true", className: "absolute inset-y-0 left-0 w-[3px]", style: { background: tone, boxShadow: `0 0 8px ${tone}` } }),
+    HX(
+      "span",
+      { className: "relative flex min-w-0 flex-1 items-center gap-2 pl-3 pr-2.5 max-[379px]:gap-1.5 max-[379px]:pl-2.5" },
+      HX(
+        "span",
+        {
+          className: "min-w-0 flex-1 truncate font-semibold uppercase leading-[1.4] tracking-[0.06em] text-yellow-300",
+          style: { textShadow: halo },
+          "data-cd-name": !0,
+        },
+        label,
+      ),
+      expired
+        ? HX(
+            "span",
+            {
+              className: "shrink-0 animate-pulse font-mono text-[12px] font-bold uppercase leading-[1.4] tracking-normal text-red-400 motion-reduce:animate-none",
+              style: { textShadow: `${halo}, 0 0 10px #ef4444` },
+              role: preview ? void 0 : "status",
+              "data-cd-expired": !0,
+            },
+            "[ Expirado ]",
+          )
+        : HX(
+            "span",
+            {
+              className: "shrink-0 whitespace-nowrap font-mono font-bold tabular-nums leading-[1.4] tracking-normal",
+              style: { color: has ? (urgent ? "#fde047" : "#67e8f9") : "#a1a1aa", textShadow: `${halo}, 0 0 10px ${tone}` },
+              "data-cd-time": !0,
+            },
+            has ? cdText(cdParts(diff)) : "--d --h --m --s",
+          ),
+    ),
+  );
+}
+// ---- pilha compacta no canto superior direito ----
 function CountdownStack({ items, setItems }) {
   let [now, setNow] = (0, K.useState)(() => Date.now()),
     [modal, setModal] = (0, K.useState)(null),
     sig = items.map((x) => x.date).join("|");
-  // UM único setInterval para todos os contadores: 1 tick/s enquanto houver algum no futuro.
-  // Limpo ao desmontar, ao mudar alguma data e quando todos expiram.
+  // UM único setInterval para todos os contadores (e para a pré-visualização do modal):
+  // 1 tick/s enquanto houver algum objetivo no futuro ou o modal estiver aberto. Limpo ao desmontar/mudar/expirar.
   (0, K.useEffect)(() => {
     let ts = items.map((x) => cdTs(x.date)).filter(Number.isFinite);
     setNow(Date.now());
-    if (!ts.some((t) => t > Date.now())) return;
+    if (!modal && !ts.some((t) => t > Date.now())) return;
     let id = setInterval(() => {
       let n = Date.now();
-      (setNow(n), ts.every((t) => t <= n) && clearInterval(id));
+      (setNow(n), !modal && ts.every((t) => t <= n) && clearInterval(id));
     }, 1e3);
     return () => clearInterval(id);
-  }, [sig]);
+  }, [sig, !!modal]);
   let editing = modal && modal.id ? items.find((x) => x.id === modal.id) : null,
-    rows = items.map((it) => {
-      let diff = cdTs(it.date) - now;
-      return { ...it, diff, expired: diff <= 0, urgent: diff > 0 && diff < 864e5 };
-    }),
     add = items.length < CD_MAX;
   return HX(
     "div",
     { className: "relative w-[min(300px,calc(100vw-5.5rem))] min-w-0", "data-countdown": !0 },
-    rows.length > 0 &&
+    items.length > 0 &&
       HX(
         "ul",
-        { className: "flex flex-col gap-0.5 normal-case tracking-normal", "aria-label": "Contagens regressivas" },
-        ...rows.map((r) =>
-          HX(
-            "li",
-            { key: r.id },
-            HX(
-              "button",
-              {
-                type: "button",
-                onClick: () => setModal({ id: r.id }),
-                title: `${r.name || "Objetivo"} \xB7 ${cdFmtDate(r.date)} \xB7 clique para editar`,
-                "aria-label": `${r.name || "Objetivo"}: ${r.expired ? "evento expirado" : cdText(cdParts(r.diff))} (editar)`,
-                "data-cd-row": r.id,
-                className:
-                  "group flex h-6 w-full items-center gap-2 border-l-2 bg-black/50 pr-2 text-left text-sm leading-none transition-colors max-[379px]:gap-1.5 max-[379px]:text-[12px] hover:bg-[#1c0a0e] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400",
-                style: { borderColor: r.expired ? "#ef4444" : r.urgent ? "#facc15" : "#22d3ee" },
-              },
-              r.icon
-                ? HX("img", { src: r.icon, alt: "", className: "h-6 w-6 shrink-0 rounded object-cover", "data-cd-icon": !0 })
-                : HX(
-                    "span",
-                    { className: "flex h-6 w-6 shrink-0 items-center justify-center rounded border border-cyan-500/40 bg-cyan-500/10" },
-                    HX(xf, { size: 13, className: r.expired ? "text-red-400" : "text-cyan-300" }),
-                  ),
-              HX(
-                "span",
-                { className: "min-w-0 flex-1 truncate font-semibold uppercase tracking-[0.06em] text-yellow-400/90 group-hover:text-yellow-300", "data-cd-name": !0 },
-                r.name || "Objetivo",
-              ),
-              r.expired
-                ? HX(
-                    "span",
-                    {
-                      className: "shrink-0 animate-pulse font-mono text-[12px] font-bold uppercase tracking-normal text-red-500 motion-reduce:animate-none",
-                      role: "status",
-                      "data-cd-expired": !0,
-                    },
-                    "[ Expirado ]",
-                  )
-                : HX(
-                    "span",
-                    {
-                      className: `shrink-0 whitespace-nowrap font-mono font-bold tabular-nums tracking-normal ${r.urgent ? "text-yellow-300" : "text-cyan-300"}`,
-                      style: { textShadow: "0 0 8px currentColor" },
-                      "data-cd-time": !0,
-                    },
-                    cdText(cdParts(r.diff)),
-                  ),
-            ),
-          ),
-        ),
+        { className: "flex flex-col gap-1 normal-case tracking-normal", "aria-label": "Contagens regressivas" },
+        ...items.map((it) => HX("li", { key: it.id, className: "relative" }, HX(CountdownCard, { item: it, now, onClick: () => setModal({ id: it.id }) }))),
       ),
     add &&
       HX(
@@ -11670,7 +11704,7 @@ function CountdownStack({ items, setItems }) {
           type: "button",
           onClick: () => setModal({ id: null }),
           "data-cd-add": !0,
-          className: `block w-full whitespace-nowrap text-right font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-red-300/60 transition-colors hover:text-cyan-300 focus-visible:text-cyan-300 focus-visible:outline-none ${rows.length ? "mt-1" : "py-2"}`,
+          className: `block w-full whitespace-nowrap text-right font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-red-300/60 transition-colors hover:text-cyan-300 focus-visible:text-cyan-300 focus-visible:outline-none ${items.length ? "mt-1" : "py-2"}`,
         },
         "[ + Adicionar objetivo ]",
       ),
