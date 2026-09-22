@@ -76,7 +76,13 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
   linear-gradient(90deg,rgba(34,211,238,.05) 1px,transparent 1px) 0 0/40px 40px,
   linear-gradient(0deg,rgba(34,211,238,.05) 1px,transparent 1px) 0 0/40px 40px}
 .recharts-wrapper,.recharts-surface{outline:none}
-@media (prefers-reduced-motion:reduce){.avail,.screen-in,.drawer-in,.fade-in,.pop-in,.flow,.scan,.pc-wire.on,.pc-ping{animation:none}}
+.hb-pulse{animation:hbpulse 2.6s ease-in-out infinite}
+@keyframes hbpulse{0%,100%{opacity:1}50%{opacity:.45}}
+.hb-spin{animation:hbspin 36s linear infinite}
+@keyframes hbspin{to{transform:rotate(360deg)}}
+.hb-grow{animation:hbgrow .7s cubic-bezier(.2,.8,.2,1) both;transform-origin:50% 100%}
+@keyframes hbgrow{from{opacity:.35;transform:scale(.9)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.avail,.screen-in,.drawer-in,.fade-in,.pop-in,.flow,.scan,.pc-wire.on,.pc-ping,.hb-pulse,.hb-spin,.hb-grow{animation:none}}
 </style>
 <!-- Sincronizacao (Supabase) + backup -->
 <script>
@@ -6202,19 +6208,77 @@ function fle({ areas: e, trophies: t, texts: a, onToggle: r, onText: n, onNewAre
     ],
   });
 }
-var Sd = [
+// Ordem FIXA das abas (menu, L1/R1 e atalhos Q/E):
+// HUB -> FINANÇAS -> BACKLOG -> PLANEJAMENTO -> MEU PC -> LEITURAS -> TAREFAS -> HÁBITOS (e volta ao HUB)
+var TAB_ORDER = ["hub", "fin", "games", "plan", "pc", "read", "tasks", "habits"],
+  Sd = [
     { id: "hub", label: "Hub principal", icon: Hf },
     { id: "fin", label: "Finan\xE7as", icon: ei },
     { id: "games", label: "Backlog de jogos", icon: Xo },
+    { id: "plan", label: "Planejamento anual", icon: Jl },
     { id: "pc", label: "Meu PC", icon: Yo },
     { id: "read", label: "Leituras", icon: $o },
-    { id: "plan", label: "Planejamento anual", icon: Jl },
     { id: "tasks", label: "Tarefas", icon: gf },
-  ],
+    { id: "habits", label: "H\xE1bitos", icon: pd },
+  ].sort((a, b) => TAB_ORDER.indexOf(a.id) - TAB_ORDER.indexOf(b.id)),
   w8 = "polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)";
 function dle({ tab: e, onTab: t }) {
-  let a = Sd.findIndex((n) => n.id === e),
-    r = (n) => t(Sd[(a + n + Sd.length) % Sd.length].id);
+  let a = Math.max(0, TAB_ORDER.indexOf(e)),
+    r = (n) => t(TAB_ORDER[(a + n + TAB_ORDER.length) % TAB_ORDER.length]),
+    sc = (0, K.useRef)(null),
+    [edge, setEdge] = (0, K.useState)({ l: !1, r: !1 }),
+    // bordas com "fade" só quando há abas escondidas daquele lado
+    upd = () => {
+      let c = sc.current;
+      if (!c) return;
+      let l = c.scrollLeft > 2,
+        rt = c.scrollLeft + c.clientWidth < c.scrollWidth - 2;
+      setEdge((o) => (o.l === l && o.r === rt ? o : { l, r: rt }));
+    },
+    // centraliza a aba ativa quando o menu tem rolagem
+    center = (smooth) => {
+      let c = sc.current,
+        b = c && c.querySelector('[aria-current="page"]');
+      if (!c || !b) return;
+      if (c.scrollWidth > c.clientWidth) {
+        let x = Math.max(0, Math.min(c.scrollWidth - c.clientWidth, b.offsetLeft - (c.clientWidth - b.offsetWidth) / 2));
+        if (smooth)
+          try {
+            c.scrollTo({ left: x, behavior: "smooth" });
+          } catch {
+            c.scrollLeft = x;
+          }
+        else c.scrollLeft = x;
+      }
+      upd();
+    };
+  // troca de aba (clique, L1/R1 ou Q/E): a aba ativa desliza para o centro do menu
+  (0, K.useEffect)(() => {
+    center(!0);
+  }, [e]);
+  // redimensionamento + roda do mouse (vertical) rolando o menu na horizontal
+  (0, K.useEffect)(() => {
+    let c = sc.current;
+    if (!c) return;
+    center(!1);
+    let ro = typeof ResizeObserver != "undefined" ? new ResizeObserver(() => center(!1)) : null,
+      wh = (ev) => {
+        if (c.scrollWidth <= c.clientWidth || Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
+        (ev.preventDefault(), (c.scrollLeft += ev.deltaY));
+      };
+    return (
+      ro && ro.observe(c),
+      c.addEventListener("wheel", wh, { passive: !1 }),
+      () => {
+        (ro && ro.disconnect(), c.removeEventListener("wheel", wh));
+      }
+    );
+  }, []);
+  let mask =
+      edge.l || edge.r
+        ? `linear-gradient(90deg,${edge.l ? "transparent 0,#000 30px" : "#000 0"},${edge.r ? "#000 calc(100% - 30px),transparent 100%" : "#000 100%"})`
+        : void 0,
+    lr = "shrink-0 rounded-[3px] bg-cyan-400 px-1.5 py-[1px] text-[10px] font-bold text-black transition hover:scale-110 hover:bg-cyan-300";
   return (0, u.jsxs)("nav", {
     "aria-label": "Navega\xE7\xE3o principal",
     className: "relative max-w-full",
@@ -6223,42 +6287,50 @@ function dle({ tab: e, onTab: t }) {
       (0, u.jsx)("div", { className: "absolute inset-0 bg-red-500/70", style: { clipPath: w8 } }),
       (0, u.jsx)("div", { className: "absolute bg-[#12080b]/95", style: { inset: 1.5, clipPath: w8 } }),
       (0, u.jsxs)("div", {
-        className: "relative flex items-center gap-1 overflow-x-auto px-3 py-1",
+        className: "relative flex items-center gap-1 px-3 py-1",
         children: [
           (0, u.jsx)("button", {
             onClick: () => r(-1),
-            "aria-label": "Aba anterior (L1)",
-            className:
-              "shrink-0 rounded-[3px] bg-cyan-400 px-1.5 py-[1px] text-[10px] font-bold text-black transition hover:scale-110 hover:bg-cyan-300",
+            "aria-label": "Aba anterior (L1 \xB7 tecla Q)",
+            title: "Aba anterior \xB7 tecla Q",
+            className: lr,
             children: "L1",
           }),
-          Sd.map((n) => {
-            let o = n.id === e,
-              i = n.icon;
-            return (0, u.jsxs)(
-              "button",
-              {
-                onClick: () => t(n.id),
-                "aria-current": o ? "page" : void 0,
-                className: `relative flex shrink-0 items-center gap-2 px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.16em] transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 sm:px-4 sm:text-[13px] ${o ? "bg-cyan-500/10 text-cyan-300" : "text-red-400 hover:bg-red-900/40 hover:text-red-200"}`,
-                children: [
-                  (0, u.jsx)(i, { size: 15, strokeWidth: 1.8 }),
-                  n.label,
-                  o &&
-                    (0, u.jsx)("span", {
-                      className: "absolute inset-x-2 bottom-0 h-[2px] bg-cyan-400",
-                      style: { boxShadow: "0 0 8px #22d3ee" },
-                    }),
-                ],
-              },
-              n.id,
-            );
+          (0, u.jsx)("div", {
+            ref: sc,
+            onScroll: upd,
+            "data-nav-scroll": !0,
+            className: "relative flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            style: mask ? { WebkitMaskImage: mask, maskImage: mask } : void 0,
+            children: Sd.map((n) => {
+              let o = n.id === e,
+                i = n.icon;
+              return (0, u.jsxs)(
+                "button",
+                {
+                  onClick: () => t(n.id),
+                  "aria-current": o ? "page" : void 0,
+                  title: n.label,
+                  className: `relative flex shrink-0 items-center gap-2 px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.16em] transition-all duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 sm:px-4 sm:text-[13px] ${o ? "bg-cyan-500/10 text-cyan-300" : "text-red-400 hover:bg-red-900/40 hover:text-red-200"}`,
+                  children: [
+                    (0, u.jsx)(i, { size: 15, strokeWidth: 1.8 }),
+                    n.label,
+                    o &&
+                      (0, u.jsx)("span", {
+                        className: "absolute inset-x-2 bottom-0 h-[2px] bg-cyan-400",
+                        style: { boxShadow: "0 0 8px #22d3ee" },
+                      }),
+                  ],
+                },
+                n.id,
+              );
+            }),
           }),
           (0, u.jsx)("button", {
             onClick: () => r(1),
-            "aria-label": "Pr\xF3xima aba (R1)",
-            className:
-              "shrink-0 rounded-[3px] bg-cyan-400 px-1.5 py-[1px] text-[10px] font-bold text-black transition hover:scale-110 hover:bg-cyan-300",
+            "aria-label": "Pr\xF3xima aba (R1 \xB7 tecla E)",
+            title: "Pr\xF3xima aba \xB7 tecla E",
+            className: lr,
             children: "R1",
           }),
         ],
@@ -6280,6 +6352,7 @@ function ple({ tab: e }) {
           read: "Terminal // Biblioteca",
           plan: "Terminal // Planejamento",
           tasks: "Terminal // Kanban",
+          habits: "Terminal // H\xE1bitos",
         }[e],
       }),
       (0, u.jsx)("span", {
@@ -10719,276 +10792,903 @@ function KanbanPage({ boards, setBoards, active, setActive }) {
     boardModal && kbPortal(boardModal),
   );
 }
-// ===== Widget de contagem regressiva (objetivo/evento) — canto superior direito do HUB, à esquerda do botão de Sincronização =====
-var CD_KEY = "skilltree-countdown-v1",
-  cdTs = (e) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(e || "")) ? new Date(e).getTime() : NaN),
-  cdPad = (e) => String(e).padStart(2, "0");
-function cdLoad() {
-  try {
-    let e = localStorage.getItem(CD_KEY),
-      t = e ? JSON.parse(e) : null;
-    return {
-      name: t && typeof t.name == "string" ? t.name.slice(0, 40) : "",
-      date: t && Number.isFinite(cdTs(t.date)) ? String(t.date).slice(0, 16) : "",
+// ===== HÁBITOS · rastreador com ofensiva (streak) e árvore que cresce =====
+// habits = [{ id, name, desc, icon (data URL base64), streak, best, lastCheckedDate ("AAAA-MM-DD"), history: [datas], prev }]
+// As datas usam o calendário LOCAL no formato ISO (AAAA-MM-DD). Com UTC o "dia" viraria às 21h no Brasil.
+var HB_KEY = "skilltree-habits-v1",
+  hbToday = (d) => {
+    let t = d || new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  },
+  hbDateObj = (s) => {
+    let [y, m, d] = String(s).split("-").map(Number);
+    return new Date(y, m - 1, d);
+  },
+  hbAddDays = (s, n) => {
+    let t = hbDateObj(s);
+    return (t.setDate(t.getDate() + n), hbToday(t));
+  },
+  // diferença em dias de calendário (b - a), imune a horário de verão
+  hbDays = (a, b) => {
+    let p = (s) => {
+      let [y, m, d] = String(s).split("-").map(Number);
+      return Date.UTC(y, m - 1, d);
     };
+    return Math.round((p(b) - p(a)) / 864e5);
+  },
+  hbValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")),
+  hbNew = (x) => ({ id: Qe(), name: "", desc: "", icon: "", streak: 0, best: 0, lastCheckedDate: "", history: [], prev: null, ...(x || {}) });
+// Regra da ofensiva: se o último check-in foi ANTES de ontem (esqueceu ontem), a ofensiva volta a 0.
+function hbNormalize(h, today) {
+  return h.streak > 0 && (!h.lastCheckedDate || hbDays(h.lastCheckedDate, today) > 1) ? { ...h, streak: 0, prev: null } : h;
+}
+// Check-in diário: só funciona 1x por dia. Check-in ontem -> +1; senão recomeça em 1.
+function hbCheckIn(h, today) {
+  if (h.lastCheckedDate && hbDays(h.lastCheckedDate, today) <= 0) return h;
+  let streak = h.lastCheckedDate && hbDays(h.lastCheckedDate, today) === 1 ? h.streak + 1 : 1;
+  return {
+    ...h,
+    prev: { streak: h.streak, best: h.best, lastCheckedDate: h.lastCheckedDate },
+    streak,
+    best: Math.max(h.best || 0, streak),
+    lastCheckedDate: today,
+    history: [...(h.history || []).filter((d) => d !== today), today].slice(-90),
+  };
+}
+// Desfazer o check-in de hoje (clique por engano)
+function hbUndo(h, today) {
+  return h.lastCheckedDate !== today || !h.prev
+    ? h
+    : { ...h, ...h.prev, history: (h.history || []).filter((d) => d !== today), prev: null };
+}
+function hbLoad() {
+  try {
+    let raw = localStorage.getItem(HB_KEY),
+      arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    let today = hbToday(),
+      ids = new Set(),
+      int = (v) => Math.max(0, Math.floor(Number(v)) || 0);
+    return arr
+      .filter((h) => h && typeof h == "object")
+      .slice(0, 60)
+      .map((h) => {
+        let id = ge(h.id, 20);
+        (!id || ids.has(id)) && (id = Qe());
+        ids.add(id);
+        let st = int(h.streak),
+          p = h.prev && typeof h.prev == "object" ? h.prev : null;
+        return hbNormalize(
+          {
+            id,
+            name: ge(h.name, 60),
+            desc: ge(h.desc, 300),
+            icon: /^data:image\//.test(String(h.icon || "")) ? Ad(h.icon) : "",
+            streak: st,
+            best: Math.max(st, int(h.best)),
+            lastCheckedDate: hbValidDate(h.lastCheckedDate) ? h.lastCheckedDate : "",
+            history: (Array.isArray(h.history) ? h.history : []).filter(hbValidDate).slice(-90),
+            prev: p
+              ? { streak: int(p.streak), best: int(p.best), lastCheckedDate: hbValidDate(p.lastCheckedDate) ? p.lastCheckedDate : "" }
+              : null,
+          },
+          today,
+        );
+      });
   } catch {
-    return { name: "", date: "" };
+    return [];
   }
 }
+// Estágios da árvore: 0 = semente/raiz · 1–3 germinando · >3 broto · >7 galhos · >15 árvore radiante
+var hbStage = (s) => (s <= 0 ? 0 : s <= 3 ? 1 : s <= 7 ? 2 : s <= 15 ? 3 : 4),
+  HB_STAGES = [
+    { name: "Semente", short: "Semente", col: "#22d3ee", next: 1 },
+    { name: "Germinando", short: "Germinando", col: "#34d399", next: 4 },
+    { name: "Broto", short: "Broto", col: "#a3e635", next: 8 },
+    { name: "Galhos", short: "Galhos", col: "#facc15", next: 16 },
+    { name: "\xC1rvore radiante", short: "Radiante", col: "#f0abfc", next: 0 },
+  ],
+  // viewBox por estágio (mesma proporção 5:4): o "zoom" diminui conforme a planta cresce
+  HB_VIEW = ["50 82 100 80", "37.5 64 125 100", "23.1 41.4 153.8 123", "7.4 15.6 185.2 148.1", "0 0 200 160"],
+  // galhos: [altura relativa no tronco, lado (-1 esq · 1 dir), comprimento, ângulo (negativo = para cima)]
+  HB_BRANCHES = [
+    [0.52, -1, 30, -32],
+    [0.6, 1, 32, -30],
+    [0.7, -1, 26, -40],
+    [0.77, 1, 27, -42],
+    [0.84, -1, 20, -52],
+    [0.9, 1, 20, -55],
+    [0.45, 1, 22, -22],
+    [0.4, -1, 20, -20],
+  ];
+// Árvore cibernética em SVG. Tudo deriva do streak: o estágio (renderização condicional) e o tamanho (escala contínua).
+function HabitTree({ streak, uid }) {
+  let s = Math.max(0, streak | 0),
+    st = hbStage(s),
+    col = HB_STAGES[st].col,
+    gx = 100,
+    gy = 146,
+    trunk =
+      st === 0 ? 0 : st === 1 ? 10 + s * 5 : st === 2 ? 26 + (s - 4) * 5 : st === 3 ? 48 + (s - 8) * 2.2 : Math.min(92, 66 + (s - 16) * 0.9),
+    topY = gy - trunk,
+    glow = `url(#hbg-${uid})`,
+    nBr = st === 3 ? Math.min(HB_BRANCHES.length, 2 + Math.floor((s - 8) / 2)) : st === 4 ? HB_BRANCHES.length : 0,
+    nLeaf = st === 1 ? 2 : st === 2 ? 2 + Math.min(3, s - 4) : 0,
+    nCanopy = st === 4 ? Math.min(26, 10 + (s - 16)) : 0,
+    cR = 34 + Math.min(10, Math.max(0, s - 16) * 0.4),
+    rootsN = 2 + Math.min(4, st + (s > 30 ? 1 : 0)),
+    leaf = (x, y, ang, sc) => ({ d: "M0 0 C5 -6 13 -7 18 0 C13 7 5 6 0 0 Z", transform: `translate(${x} ${y}) rotate(${ang}) scale(${sc})` }),
+    br = HB_BRANCHES.slice(0, nBr).map(([h, side, len, ang]) => {
+      let by = gy - trunk * h,
+        L = len * (st === 4 ? 1.15 : 0.85 + Math.min(0.3, (s - 8) * 0.04)),
+        r = (Math.abs(ang) * Math.PI) / 180;
+      return { by, ex: gx + side * Math.cos(r) * L, ey: by - Math.sin(r) * L, side };
+    }),
+    // copa: nós distribuídos em espiral (ângulo áureo)
+    canopy = Array.from({ length: nCanopy }, (_, i) => {
+      let t = (i + 0.5) / nCanopy,
+        r = cR * Math.sqrt(t),
+        a = i * 2.39996;
+      return { x: gx + Math.cos(a) * r * 1.2, y: topY - 6 + Math.sin(a) * r * 0.82, r: 2.2 + (i % 3) * 0.9 };
+    }),
+    j = u.jsx,
+    js = u.jsxs;
+  return js("svg", {
+    viewBox: HB_VIEW[st],
+    className: "block h-full w-full",
+    role: "img",
+    "aria-label": `\xC1rvore da ofensiva: ${HB_STAGES[st].name}, ${s} dia${s === 1 ? "" : "s"}`,
+    "data-hb-stage": st,
+    children: [
+      js("defs", {
+        children: [
+          js("filter", {
+            id: `hbg-${uid}`,
+            x: "-50%",
+            y: "-50%",
+            width: "200%",
+            height: "200%",
+            children: [
+              j("feGaussianBlur", { stdDeviation: st === 4 ? 2.4 : 1.7, result: "b" }),
+              js("feMerge", { children: [j("feMergeNode", { in: "b" }), j("feMergeNode", { in: "SourceGraphic" })] }),
+            ],
+          }),
+          js("radialGradient", {
+            id: `hbh-${uid}`,
+            children: [
+              j("stop", { offset: "0", stopColor: col, stopOpacity: st === 4 ? ".5" : ".22" }),
+              j("stop", { offset: "1", stopColor: col, stopOpacity: "0" }),
+            ],
+          }),
+        ],
+      }),
+      // halo
+      j("ellipse", {
+        cx: gx,
+        cy: st >= 3 ? topY : gy - 10,
+        rx: st === 4 ? 84 : st === 3 ? 60 : 36 + st * 6,
+        ry: st === 4 ? 64 : st === 3 ? 48 : 24 + st * 5,
+        fill: `url(#hbh-${uid})`,
+        className: st === 4 ? "hb-pulse" : "",
+      }),
+      // raios girando (só a árvore radiante)
+      st === 4 &&
+        j("g", {
+          className: "hb-spin",
+          style: { transformOrigin: `${gx}px ${topY - 6}px` },
+          stroke: col,
+          strokeOpacity: ".4",
+          strokeWidth: "1",
+          strokeLinecap: "round",
+          children: Array.from({ length: 16 }, (_, i) => {
+            let a = (i / 16) * Math.PI * 2,
+              r1 = i % 2 ? 58 : 54,
+              r2 = i % 2 ? 66 : 74;
+            return j(
+              "path",
+              { d: `M${gx + Math.cos(a) * r1} ${topY - 6 + Math.sin(a) * r1 * 0.8} L${gx + Math.cos(a) * r2} ${topY - 6 + Math.sin(a) * r2 * 0.8}` },
+              i,
+            );
+          }),
+        }),
+      // solo
+      j("path", { d: `M16 ${gy} H184`, stroke: "#ef4444", strokeOpacity: ".5", strokeWidth: "1.2" }),
+      j("path", { d: `M16 ${gy + 3} H184`, stroke: "#ef4444", strokeOpacity: ".18", strokeWidth: "1", strokeDasharray: "2 5" }),
+      // raízes em forma de trilha de circuito
+      j("g", {
+        stroke: col,
+        strokeOpacity: ".6",
+        strokeWidth: "1.1",
+        fill: "none",
+        children: Array.from({ length: rootsN }, (_, i) => {
+          let side = i % 2 ? 1 : -1,
+            k = Math.floor(i / 2) + 1,
+            x2 = gx + side * (12 + k * 14),
+            y2 = gy + 4 + k * 2.4;
+          return js(
+            "g",
+            {
+              children: [
+                j("path", { d: `M${gx} ${gy + 1} L${gx + side * 4 * k} ${y2} H${x2}` }),
+                j("circle", { cx: x2, cy: y2, r: "1.7", fill: col, stroke: "none" }),
+              ],
+            },
+            i,
+          );
+        }),
+      }),
+      // corpo da planta (um único filtro de brilho para o grupo inteiro)
+      js("g", {
+        filter: glow,
+        children: [
+          // semente
+          js("g", {
+            className: st === 0 ? "hb-pulse" : "",
+            children: [
+              j("ellipse", {
+                cx: gx,
+                cy: gy - 3,
+                rx: st === 0 ? 7.5 : 5,
+                ry: st === 0 ? 5.2 : 3.6,
+                fill: st === 0 ? col : "#0a0f14",
+                fillOpacity: st === 0 ? ".85" : "1",
+                stroke: col,
+                strokeWidth: "1.4",
+              }),
+              st === 0 && j("path", { d: `M${gx - 3} ${gy - 5} q2 -3 6 -3.5`, stroke: "#e0fbff", strokeWidth: "1.1", fill: "none" }),
+            ],
+          }),
+          // caule / tronco
+          st >= 1 &&
+            j("path", {
+              d: `M${gx} ${gy - 4} C${gx - 3} ${gy - trunk * 0.4} ${gx + 3} ${gy - trunk * 0.7} ${gx} ${topY}`,
+              stroke: col,
+              strokeWidth: st >= 3 ? 3.2 + Math.min(2, (s - 8) * 0.12) : st === 2 ? 2.2 : 1.8,
+              strokeLinecap: "round",
+              fill: "none",
+              "data-hb-trunk": Math.round(trunk),
+            }),
+          // galhos com nós de circuito
+          ...br.map((b, i) =>
+            js(
+              "g",
+              {
+                children: [
+                  j("path", {
+                    d: `M${gx} ${b.by} Q${(gx + b.ex) / 2} ${b.by - 3} ${b.ex} ${b.ey}`,
+                    stroke: col,
+                    strokeWidth: "1.8",
+                    fill: "none",
+                    strokeLinecap: "round",
+                  }),
+                  j("circle", { cx: b.ex, cy: b.ey, r: "2.6", fill: "#0a0f14", stroke: col, strokeWidth: "1.3" }),
+                  j("path", { ...leaf(b.ex, b.ey, b.side < 0 ? -150 : -30, 0.62), fill: col, fillOpacity: ".6" }),
+                ],
+              },
+              `b${i}`,
+            ),
+          ),
+          // folhas do broto
+          ...Array.from({ length: nLeaf }, (_, i) => {
+            let side = i % 2 ? 1 : -1,
+              y = topY + 4 + Math.floor(i / 2) * 9,
+              sc = st === 1 ? 0.5 + s * 0.08 : 0.75 + Math.min(0.35, (s - 4) * 0.09);
+            return j(
+              "path",
+              { ...leaf(gx, y, side < 0 ? -160 : -20, sc), fill: col, fillOpacity: ".75", stroke: col, strokeWidth: ".6" },
+              `l${i}`,
+            );
+          }),
+          // copa radiante: rede de nós
+          nCanopy > 0 &&
+            j("path", {
+              d: canopy
+                .slice(0, 14)
+                .map((c, i) => `${i ? "L" : "M"}${c.x.toFixed(1)} ${c.y.toFixed(1)}`)
+                .join(" "),
+              stroke: "#67e8f9",
+              strokeOpacity: ".35",
+              strokeWidth: ".8",
+              fill: "none",
+            }),
+          ...canopy.map((c, i) => j("circle", { cx: c.x, cy: c.y, r: c.r, fill: i % 4 === 0 ? "#fef08a" : col, fillOpacity: ".9" }, `c${i}`)),
+          // ponta luminosa do broto
+          st >= 1 && st <= 2 && j("circle", { cx: gx, cy: topY, r: "2.3", fill: "#e0fbff" }),
+        ],
+      }),
+      // faíscas piscando (fora do filtro para não recalcular o brilho a cada quadro)
+      st === 4 &&
+        j("g", {
+          className: "hb-pulse",
+          fill: "#fef9c3",
+          children: canopy
+            .filter((_, i) => i % 5 === 2)
+            .map((c, i) => j("circle", { cx: c.x, cy: c.y, r: c.r + 0.8, fillOpacity: ".8" }, i)),
+        }),
+    ],
+  });
+}
+// ---- modal: criar / editar hábito ----
+function HabitModal({ habit, onSave, onDelete, onClose }) {
+  let edit = !!habit,
+    [name, setName] = (0, K.useState)(edit ? habit.name : ""),
+    [desc, setDesc] = (0, K.useState)(edit ? habit.desc : ""),
+    [icon, setIcon] = (0, K.useState)(edit ? habit.icon : ""),
+    [err, setErr] = (0, K.useState)(""),
+    [delAsk, setDelAsk] = (0, K.useState)(!1),
+    save = () => {
+      if (!name.trim()) return setErr("D\xEA um nome ao h\xE1bito.");
+      (onSave({ name: name.trim().slice(0, 60), desc: desc.trim().slice(0, 300), icon }), onClose());
+    };
+  (0, K.useEffect)(() => {
+    let k = (ev) => {
+      ev.key === "Escape" && onClose();
+    };
+    return (window.addEventListener("keydown", k), () => window.removeEventListener("keydown", k));
+  }, [onClose]);
+  return HX(
+    "div",
+    {
+      className: "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": edit ? "Editar h\xE1bito" : "Novo h\xE1bito",
+      "data-hb-modal": !0,
+    },
+    HX("button", { className: "fade-in absolute inset-0 cursor-default bg-black/70 backdrop-blur-[2px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX(
+      "div",
+      { className: "pop-in relative max-h-full w-full max-w-md overflow-y-auto" },
+      HX("div", { className: "absolute inset-0 bg-lime-400/80", style: { clipPath: it } }),
+      HX("div", { className: "absolute bg-[#0b0d14]/95", style: { inset: 1.5, clipPath: it } }),
+      HX(
+        "div",
+        { className: "relative p-5" },
+        HX(
+          "div",
+          { className: "flex items-start justify-between gap-3 border-b border-lime-900/60 pb-3" },
+          HX(
+            "div",
+            {},
+            HX("div", { className: "text-[9px] tracking-[0.35em] text-lime-400/80" }, "H\xC1BITOS//PROTOCOLO"),
+            HX("h2", { className: "text-xl font-bold uppercase tracking-[0.12em] text-yellow-400" }, edit ? "Editar h\xE1bito" : "Novo h\xE1bito"),
+          ),
+          HX(
+            "button",
+            { onClick: onClose, "aria-label": "Fechar", className: "p-1.5 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" },
+            HX(Da, { size: 20 }),
+          ),
+        ),
+        HX(
+          "label",
+          { className: "mt-4 block" },
+          HX("span", { className: HLBL }, "Nome do h\xE1bito"),
+          HX("input", {
+            autoFocus: !0,
+            "aria-label": "Nome do h\xE1bito",
+            value: name,
+            maxLength: 60,
+            placeholder: "Ex.: Ler 10 p\xE1ginas",
+            onChange: (ev) => (setName(ev.target.value), setErr("")),
+            onKeyDown: (ev) => {
+              ev.key === "Enter" && save();
+            },
+            className: HIN,
+          }),
+        ),
+        HX(
+          "label",
+          { className: "mt-3 block" },
+          HX("span", { className: HLBL }, "Descri\xE7\xE3o"),
+          HX("textarea", {
+            "aria-label": "Descri\xE7\xE3o do h\xE1bito",
+            value: desc,
+            rows: 3,
+            maxLength: 300,
+            placeholder: "Por que esse h\xE1bito importa? Quando fazer?",
+            onChange: (ev) => setDesc(ev.target.value),
+            className: `${HIN} resize-none`,
+          }),
+        ),
+        HX(
+          "div",
+          { className: "mt-3" },
+          HX("span", { className: HLBL }, "\xCDcone (imagem)"),
+          HX(
+            "div",
+            { className: "flex items-center gap-3" },
+            HX(
+              "span",
+              { className: "flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded border border-lime-500/50 bg-black/50" },
+              icon ? HX("img", { src: icon, alt: "", className: "h-12 w-12 object-cover" }) : HX(pd, { size: 22, className: "text-lime-400/70" }),
+            ),
+            HX(Od, { variant: "full", value: icon, onChange: setIcon, label: "\xCDcone do h\xE1bito", maxDim: 160, quality: 0.85 }),
+          ),
+        ),
+        err && HX("p", { className: "mt-3 text-[12px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+        HX(
+          "div",
+          { className: "mt-5 flex flex-wrap items-center justify-between gap-3" },
+          edit && onDelete
+            ? delAsk
+              ? HX(HBtn, { tone: "danger", onClick: () => (onDelete(), onClose()), label: "Confirmar exclus\xE3o do h\xE1bito" }, HX(yt, { size: 13 }), "Excluir de vez")
+              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir h\xE1bito" }, HX(yt, { size: 13 }), "Excluir")
+            : HX("span", {}),
+          HX(ye, { variant: "primary", onClick: save }, HX(edit ? ls : gt, { size: 15, strokeWidth: 2.5 }), edit ? "Salvar" : "Criar h\xE1bito"),
+        ),
+      ),
+    ),
+  );
+}
+// ---- cartão do hábito ----
+function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
+  let done = !!h.lastCheckedDate && h.lastCheckedDate >= today,
+    st = hbStage(h.streak),
+    stg = HB_STAGES[st],
+    col = stg.col,
+    hist = new Set(h.history || []),
+    week = Array.from({ length: 7 }, (_, i) => {
+      let ds = hbAddDays(today, i - 6);
+      return { ds, on: hist.has(ds), wd: "DSTQQSS"[hbDateObj(ds).getDay()], isToday: i === 6 };
+    }),
+    toNext = stg.next ? stg.next - h.streak : 0;
+  return HX(
+    "article",
+    {
+      className: "relative flex flex-col overflow-hidden border bg-zinc-900/70 backdrop-blur-md transition-shadow duration-300",
+      style: { borderColor: `${col}55`, boxShadow: done ? `0 0 24px -8px ${col}` : "none" },
+      "data-habit": h.id,
+    },
+    HX("div", { className: "h-[3px] w-full shrink-0", style: { background: col, boxShadow: `0 0 12px ${col}` } }),
+    HX(
+      "div",
+      { className: "flex items-start gap-3 px-4 pt-3" },
+      HX(
+        "span",
+        { className: "flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded border bg-black/50", style: { borderColor: `${col}88` } },
+        h.icon ? HX("img", { src: h.icon, alt: "", className: "h-11 w-11 object-cover" }) : HX(pd, { size: 20, style: { color: col } }),
+      ),
+      HX(
+        "div",
+        { className: "min-w-0 flex-1" },
+        HX("h3", { className: "break-words text-[15px] font-bold uppercase leading-tight tracking-[0.08em] text-zinc-100" }, h.name || "H\xE1bito"),
+        h.desc && HX("p", { className: "mt-0.5 line-clamp-2 text-[12px] leading-snug text-zinc-400", title: h.desc }, h.desc),
+      ),
+      HX(MiniAct, { icon: ns, label: `Editar h\xE1bito ${h.name}`, onClick: () => onEdit(h.id), size: 26 }),
+    ),
+    // árvore da ofensiva (key = streak: a animação de crescimento roda a cada mudança)
+    HX(
+      "div",
+      { className: "relative mx-4 mt-3 h-40 overflow-hidden border border-white/5 bg-gradient-to-b from-[#07121a] to-[#0a0508]" },
+      HX("div", { key: h.streak, className: "hb-grow h-full w-full" }, HX(HabitTree, { streak: h.streak, uid: h.id })),
+      HX("span", { className: "absolute left-2 top-1.5 text-[9px] font-semibold uppercase tracking-[0.25em]", style: { color: col } }, stg.name),
+      HX(
+        "span",
+        { className: "absolute right-2 top-1.5 font-orbit text-[9px] uppercase tracking-[0.12em] text-zinc-400", title: "Maior ofensiva" },
+        `\u{1F3C6} ${h.best || 0}`,
+      ),
+    ),
+    // ofensiva + últimos 7 dias
+    HX(
+      "div",
+      { className: "px-4 pt-3" },
+      HX(
+        "p",
+        { className: "text-[15px] font-bold tracking-wide", style: { color: h.streak ? "#fb923c" : "#71717a" }, "data-hb-streak": h.streak },
+        `\u{1F525} ${h.streak} dia${h.streak === 1 ? "" : "s"} de ofensiva`,
+      ),
+      HX(
+        "p",
+        { className: "mt-0.5 truncate text-[10px] uppercase tracking-[0.12em] text-zinc-500" },
+        toNext > 0
+          ? `Pr\xF3ximo: ${HB_STAGES[st + 1].short} em ${toNext} dia${toNext === 1 ? "" : "s"}`
+          : "Est\xE1gio m\xE1ximo alcan\xE7ado",
+      ),
+      HX(
+        "div",
+        { className: "mt-2" },
+        HX(
+          "div",
+          { className: "flex justify-between gap-1", role: "list", "aria-label": "\xDAltimos 7 dias" },
+          ...week.map((w) =>
+            HX(
+              "span",
+              {
+                key: w.ds,
+                role: "listitem",
+                title: `${w.ds.split("-").reverse().join("/")}${w.on ? " \xB7 feito" : ""}`,
+                className: `flex h-6 min-w-0 flex-1 items-center justify-center border text-[9px] font-bold ${w.on ? "text-black" : w.isToday ? "border-dashed border-lime-400/60 text-lime-300/80" : "border-white/10 text-zinc-500"}`,
+                style: w.on ? { background: col, borderColor: col, boxShadow: `0 0 6px ${col}` } : void 0,
+              },
+              w.wd,
+            ),
+          ),
+        ),
+      ),
+    ),
+    // check-in
+    HX(
+      "div",
+      { className: "mt-auto px-4 pb-4 pt-3" },
+      done
+        ? HX(
+            "div",
+            { className: "flex items-center gap-2" },
+            HX(
+              "div",
+              {
+                className: "flex flex-1 items-center justify-center gap-2 border py-2.5 text-[12px] font-bold uppercase tracking-[0.2em]",
+                style: { borderColor: col, color: col, background: `${col}1a` },
+                "data-hb-done": !0,
+              },
+              HX(Wn, { size: 15, strokeWidth: 3 }),
+              "Feito hoje",
+            ),
+            h.prev &&
+              HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => onUndo(h.id),
+                  "data-hb-undo": h.id,
+                  className: "px-1 text-[10px] uppercase tracking-wider text-zinc-500 underline-offset-2 hover:text-red-300 hover:underline",
+                  title: "Desfazer o check-in de hoje",
+                },
+                "Desfazer",
+              ),
+          )
+        : HX(
+            "button",
+            {
+              type: "button",
+              onClick: () => onCheck(h.id),
+              "data-hb-check": h.id,
+              className:
+                "w-full border-2 border-dashed border-lime-400 py-2.5 text-[12px] font-bold uppercase tracking-[0.2em] text-lime-300 transition-all hover:scale-[1.02] hover:border-solid hover:bg-lime-400 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
+            },
+            "[ Check-in di\xE1rio ]",
+          ),
+    ),
+  );
+}
+// ---- página da aba HÁBITOS ----
+function HabitsPage({ habits, setHabits, today }) {
+  let [modal, setModal] = (0, K.useState)(null),
+    doneToday = habits.filter((h) => h.lastCheckedDate === today).length,
+    best = habits.reduce((m, h) => Math.max(m, h.best || 0), 0),
+    upd = (id, fn) => setHabits((hs) => hs.map((h) => (h.id === id ? fn(h) : h))),
+    editing = modal && modal.id ? habits.find((h) => h.id === modal.id) : null;
+  return HX(
+    "div",
+    { className: "min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-8", "data-habits": !0 },
+    HX(Pd, {
+      icon: pd,
+      title: "H\xE1bitos",
+      sub: `Ofensivas di\xE1rias \xB7 ${doneToday}/${habits.length} hoje \xB7 recorde ${best} dia${best === 1 ? "" : "s"}`,
+      right: HX(ye, { variant: "primary", onClick: () => setModal({ id: null }) }, HX(gt, { size: 15, strokeWidth: 3 }), "Novo h\xE1bito"),
+    }),
+    habits.length === 0
+      ? HX(
+          "div",
+          { className: "flex flex-col items-center justify-center gap-4 border border-dashed border-lime-500/40 bg-black/30 px-6 py-12 text-center" },
+          HX("div", { className: "h-40 w-52" }, HX(HabitTree, { streak: 0, uid: "empty" })),
+          HX(
+            "p",
+            { className: "max-w-md text-[13px] uppercase tracking-[0.2em] text-lime-200/80" },
+            "Plante o primeiro h\xE1bito \xB7 a \xE1rvore cresce a cada dia seguido de check-in",
+          ),
+          HX(ye, { variant: "primary", onClick: () => setModal({ id: null }) }, HX(gt, { size: 15, strokeWidth: 3 }), "Criar h\xE1bito"),
+        )
+      : HX(
+          "div",
+          { className: "grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]", "data-habits-grid": !0 },
+          ...habits.map((h) =>
+            HX(HabitCard, {
+              key: h.id,
+              h,
+              today,
+              onCheck: (id) => upd(id, (x) => hbCheckIn(x, today)),
+              onUndo: (id) => upd(id, (x) => hbUndo(x, today)),
+              onEdit: (id) => setModal({ id }),
+            }),
+          ),
+        ),
+    modal &&
+      kbPortal(
+        HX(HabitModal, {
+          key: modal.id || "new",
+          habit: editing,
+          onClose: () => setModal(null),
+          onSave: (v) => (editing ? upd(editing.id, (x) => ({ ...x, ...v })) : setHabits((hs) => [...hs, hbNew(v)])),
+          onDelete: editing ? () => setHabits((hs) => hs.filter((x) => x.id !== editing.id)) : void 0,
+        }),
+      ),
+  );
+}
+// ===== Contagens regressivas (até CD_MAX objetivos) — canto superior direito do HUB, à esquerda do botão de Sincronização =====
+// Estado GLOBAL (y2): countdowns = [{ id, name, date: "AAAA-MM-DDTHH:MM" (hora local), icon: data URL base64 }]
+// Persistido em "skilltree-countdown-v2" (entra no backup e na sincronização). O formato antigo (v1, 1 objetivo) é migrado.
+var CD_KEY = "skilltree-countdown-v1",
+  CD2_KEY = "skilltree-countdown-v2",
+  CD_MAX = 3,
+  cdTs = (e) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(e || "")) ? new Date(e).getTime() : NaN),
+  cdPad = (e) => String(e).padStart(2, "0");
 function cdParts(e) {
   let t = Math.max(0, Math.floor(e / 1e3));
   return { d: Math.floor(t / 86400), h: Math.floor((t % 86400) / 3600), m: Math.floor((t % 3600) / 60), s: t % 60 };
 }
-var cdText = (p) => `${p.d}d ${cdPad(p.h)}h ${cdPad(p.m)}m ${cdPad(p.s)}s`;
-function CountdownWidget() {
-  let j = u.jsx,
-    js = u.jsxs,
-    [countdownEvent, setCountdownEvent] = (0, K.useState)(cdLoad),
-    [open, setOpen] = (0, K.useState)(!1),
-    [now, setNow] = (0, K.useState)(() => Date.now()),
-    [draft, setDraft] = (0, K.useState)({ name: "", date: "" }),
+var cdText = (p) => `${p.d}d ${cdPad(p.h)}h ${cdPad(p.m)}m ${cdPad(p.s)}s`,
+  cdFmtDate = (e) => {
+    let t = cdTs(e);
+    return Number.isFinite(t)
+      ? new Date(t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "";
+  };
+function cdClean(arr) {
+  if (!Array.isArray(arr)) return [];
+  let ids = new Set();
+  return arr
+    .filter((x) => x && typeof x == "object" && Number.isFinite(cdTs(x.date)))
+    .slice(0, CD_MAX)
+    .map((x) => {
+      let id = ge(x.id, 20);
+      (!id || ids.has(id)) && (id = Qe());
+      ids.add(id);
+      return {
+        id,
+        name: typeof x.name == "string" ? x.name.slice(0, 40) : "",
+        date: String(x.date).slice(0, 16),
+        icon: /^data:image\//.test(String(x.icon || "")) ? Ad(x.icon) : "",
+      };
+    });
+}
+function cdLoadAll() {
+  let v2 = null;
+  try {
+    v2 = localStorage.getItem(CD2_KEY);
+    if (v2 !== null) return cdClean(JSON.parse(v2));
+  } catch {
+    if (v2 !== null) return [];
+  }
+  // migração do formato antigo { name, date } -> primeiro item da lista
+  try {
+    let o = JSON.parse(localStorage.getItem(CD_KEY) || "null");
+    return o && typeof o == "object" ? cdClean([{ name: o.name, date: o.date }]) : [];
+  } catch {
+    return [];
+  }
+}
+// ---- modal: criar / editar um objetivo ----
+function CountdownModal({ item, now, onSave, onDelete, onClose }) {
+  let edit = !!item,
+    [name, setName] = (0, K.useState)(edit ? item.name : ""),
+    [date, setDate] = (0, K.useState)(edit ? item.date : ""),
+    [icon, setIcon] = (0, K.useState)(edit ? item.icon : ""),
     [err, setErr] = (0, K.useState)(""),
-    [top, setTop] = (0, K.useState)(120),
-    box = (0, K.useRef)(null),
-    btn = (0, K.useRef)(null),
-    target = cdTs(countdownEvent.date),
-    has = Number.isFinite(target),
-    diff = has ? target - now : 0,
-    expired = has && diff <= 0,
-    urgent = has && !expired && diff < 864e5,
-    parts = cdParts(diff);
-  // persistência local (também entra no backup e na sincronização, pois usa o prefixo "skilltree-")
+    [delAsk, setDelAsk] = (0, K.useState)(!1),
+    dTs = cdTs(date),
+    preview = Number.isFinite(dTs) ? (dTs <= now ? "Essa data j\xE1 passou" : `Faltam ${cdText(cdParts(dTs - now))}`) : "",
+    save = (ev) => {
+      ev && ev.preventDefault();
+      if (!Number.isFinite(cdTs(date))) return setErr("Informe a data e a hora do evento.");
+      (onSave({ name: name.trim().slice(0, 40), date: date.slice(0, 16), icon }), onClose());
+    };
   (0, K.useEffect)(() => {
-    try {
-      if (!countdownEvent.name && !countdownEvent.date && localStorage.getItem(CD_KEY) === null) return;
-      localStorage.setItem(CD_KEY, JSON.stringify(countdownEvent));
-    } catch {}
-  }, [countdownEvent]);
-  // relógio: 1 tick por segundo enquanto houver evento futuro; limpa o intervalo ao desmontar/trocar a data/expirar
+    let k = (ev) => {
+      ev.key === "Escape" && onClose();
+    };
+    return (window.addEventListener("keydown", k), () => window.removeEventListener("keydown", k));
+  }, [onClose]);
+  return HX(
+    "div",
+    {
+      className: "fixed inset-0 z-50 flex items-center justify-center p-3 normal-case tracking-normal sm:p-6",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": edit ? "Editar objetivo" : "Novo objetivo com contagem regressiva",
+      "data-cd-modal": !0,
+    },
+    HX("button", { type: "button", className: "fade-in absolute inset-0 cursor-default bg-black/70 backdrop-blur-[2px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX(
+      "form",
+      { onSubmit: save, className: "pop-in relative max-h-full w-full max-w-sm overflow-y-auto" },
+      HX("div", { className: "absolute inset-0 bg-red-500/90", style: { clipPath: it } }),
+      HX("div", { className: "absolute bg-[#12080b]/95", style: { inset: 1.5, clipPath: it } }),
+      HX(
+        "div",
+        { className: "relative flex flex-col gap-3 p-5" },
+        HX(
+          "div",
+          { className: "flex items-start justify-between gap-3 border-b border-red-900/60 pb-3" },
+          HX(
+            "div",
+            {},
+            HX("div", { className: "text-[9px] tracking-[0.35em] text-red-500/80" }, "COUNTDOWN//OBJETIVO"),
+            HX("h2", { className: "text-[17px] font-bold uppercase tracking-[0.14em] text-yellow-400" }, edit ? "Editar objetivo" : "Novo objetivo"),
+          ),
+          HX(
+            "button",
+            { type: "button", onClick: onClose, "aria-label": "Fechar", className: "p-1 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" },
+            HX(Da, { size: 18 }),
+          ),
+        ),
+        HX(
+          "label",
+          { className: "block" },
+          HX("span", { className: HLBL }, "Nome do objetivo / evento"),
+          HX("input", {
+            type: "text",
+            maxLength: 40,
+            autoFocus: !0,
+            "aria-label": "Nome do objetivo ou evento",
+            value: name,
+            placeholder: "Ex.: Mestrado, Casamento, Prova",
+            onChange: (ev) => setName(ev.target.value),
+            className: HIN,
+          }),
+        ),
+        HX(
+          "label",
+          { className: "block" },
+          HX("span", { className: HLBL }, "Data e hora do evento"),
+          HX("input", {
+            type: "datetime-local",
+            "aria-label": "Data e hora do evento",
+            value: date,
+            onChange: (ev) => (setDate(ev.target.value), setErr("")),
+            className: `${HIN} font-mono`,
+          }),
+        ),
+        // ícone (upload -> base64 comprimido)
+        HX(
+          "div",
+          {},
+          HX("span", { className: HLBL }, "\xCDcone (imagem)"),
+          HX(
+            "div",
+            { className: "flex items-center gap-3" },
+            HX(
+              "span",
+              { className: "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded border border-cyan-500/50 bg-black/50" },
+              icon ? HX("img", { src: icon, alt: "", className: "h-10 w-10 object-cover", "data-cd-icon-preview": !0 }) : HX(xf, { size: 18, className: "text-cyan-300/70" }),
+            ),
+            HX(Od, { variant: "full", value: icon, onChange: setIcon, label: "\xCDcone do objetivo", maxDim: 96, quality: 0.85 }),
+          ),
+        ),
+        err
+          ? HX("div", { role: "alert", className: "text-[12px] text-red-400" }, err)
+          : preview
+            ? HX("div", { className: `font-mono text-[12px] ${dTs <= now ? "text-red-400" : "text-yellow-300"}` }, preview)
+            : null,
+        HX(
+          "div",
+          { className: "flex items-center justify-between gap-2 pt-1" },
+          edit && onDelete
+            ? delAsk
+              ? HX(HBtn, { tone: "danger", onClick: () => (onDelete(), onClose()), label: "Confirmar remo\xE7\xE3o do objetivo" }, HX(yt, { size: 13 }), "Remover de vez")
+              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Remover objetivo" }, HX(yt, { size: 13 }), "Remover")
+            : HX("span", {}),
+          HX(
+            "button",
+            {
+              type: "submit",
+              className: "bg-yellow-400 px-4 py-2 text-[12px] font-bold uppercase tracking-widest text-black transition-colors hover:bg-yellow-300",
+              style: { clipPath: ot },
+            },
+            edit ? "Salvar" : "Adicionar",
+          ),
+        ),
+      ),
+    ),
+  );
+}
+// ---- lista compacta no canto superior direito ----
+function CountdownStack({ items, setItems }) {
+  let [now, setNow] = (0, K.useState)(() => Date.now()),
+    [modal, setModal] = (0, K.useState)(null),
+    sig = items.map((x) => x.date).join("|");
+  // UM único setInterval para todos os contadores: 1 tick/s enquanto houver algum no futuro.
+  // Limpo ao desmontar, ao mudar alguma data e quando todos expiram.
   (0, K.useEffect)(() => {
-    let t = cdTs(countdownEvent.date);
-    if (!Number.isFinite(t)) return;
+    let ts = items.map((x) => cdTs(x.date)).filter(Number.isFinite);
     setNow(Date.now());
-    if (t <= Date.now()) return;
+    if (!ts.some((t) => t > Date.now())) return;
     let id = setInterval(() => {
       let n = Date.now();
-      (setNow(n), n >= t && clearInterval(id));
+      (setNow(n), ts.every((t) => t <= n) && clearInterval(id));
     }, 1e3);
     return () => clearInterval(id);
-  }, [countdownEvent.date]);
-  let place = () => {
-      let r = box.current && box.current.getBoundingClientRect();
-      r && setTop(Math.round(r.bottom + 8));
-    },
-    openPop = () => {
-      (setDraft({ name: countdownEvent.name, date: countdownEvent.date }), setErr(""), place(), setOpen(!0));
-    },
-    close = () => setOpen(!1);
-  (0, K.useEffect)(() => {
-    if (!open) return;
-    let onDown = (e) => {
-        box.current && !box.current.contains(e.target) && setOpen(!1);
-      },
-      onKey = (e) => {
-        e.key === "Escape" && (setOpen(!1), btn.current && btn.current.focus());
-      };
-    return (
-      document.addEventListener("pointerdown", onDown),
-      document.addEventListener("keydown", onKey),
-      window.addEventListener("resize", place),
-      () => {
-        (document.removeEventListener("pointerdown", onDown),
-          document.removeEventListener("keydown", onKey),
-          window.removeEventListener("resize", place));
-      }
-    );
-  }, [open]);
-  let save = (e) => {
-      e && e.preventDefault();
-      if (!Number.isFinite(cdTs(draft.date))) return setErr("Informe a data e a hora do evento.");
-      (setCountdownEvent({ name: draft.name.trim().slice(0, 40), date: draft.date }), setOpen(!1));
-    },
-    clear = () => {
-      (setCountdownEvent({ name: "", date: "" }), setDraft({ name: "", date: "" }), setErr(""), setOpen(!1));
-    },
-    tone = !has
-      ? { b: "#7f1d1d", t: "text-red-300/80" }
-      : expired
-        ? { b: "#ef4444", t: "text-red-400" }
-        : urgent
-          ? { b: "#facc15", t: "text-yellow-300" }
-          : { b: "#22d3ee", t: "text-cyan-300" },
-    dTs = cdTs(draft.date),
-    preview = Number.isFinite(dTs) ? (dTs <= Date.now() ? "Essa data já passou" : `Faltam ${cdText(cdParts(dTs - now))}`) : "";
-  return js("div", {
-    ref: box,
-    className: "relative min-w-0",
-    "data-countdown": !0,
-    children: [
-      j("button", {
-        ref: btn,
-        type: "button",
-        onClick: () => (open ? close() : openPop()),
-        "aria-haspopup": "dialog",
-        "aria-expanded": open,
-        "aria-label": has ? "Contagem regressiva do objetivo (editar)" : "Definir objetivo com contagem regressiva",
-        title: has ? `${countdownEvent.name || "Objetivo"} · clique para editar` : "Definir objetivo com contagem regressiva",
-        className:
-          "group block max-w-[min(240px,calc(100vw-5.5rem))] transition-transform duration-150 hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
-        style: { clipPath: ot, background: tone.b, padding: 1.5 },
-        children: j("span", {
-          className: `flex h-[33px] items-center gap-2 bg-zinc-950 px-2.5 ${has ? "" : "border-dashed"} group-hover:bg-[#12080b]`,
-          style: { clipPath: ot },
-          children: has
-            ? js(u.Fragment, {
-                children: [
-                  j(xf, {
-                    size: 14,
-                    className: `shrink-0 ${expired ? "text-red-400" : urgent ? "text-yellow-300" : "text-cyan-300"}`,
-                  }),
-                  expired
-                    ? js("span", {
-                        className:
-                          "min-w-0 animate-pulse text-left font-mono text-[11px] font-bold uppercase leading-tight tracking-wider text-red-500 motion-reduce:animate-none",
-                        "data-countdown-expired": !0,
-                        role: "status",
-                        children: [
-                          j("span", { className: "block truncate text-[8.5px] text-red-400/90", children: countdownEvent.name || "Objetivo" }),
-                          "[ Evento expirado ]",
-                        ],
-                      })
-                    : js("span", {
-                        className: "min-w-0 text-left leading-none",
-                        children: [
-                          j("span", {
-                            className:
-                              "block truncate font-mono text-[8.5px] font-semibold uppercase tracking-[0.18em] text-yellow-400/90",
-                            "data-countdown-name": !0,
-                            children: countdownEvent.name || "Objetivo",
-                          }),
-                          j("span", {
-                            className: `mt-[3px] block whitespace-nowrap font-mono text-[12px] font-bold tracking-wide sm:text-[13px] ${tone.t}`,
-                            style: { textShadow: "0 0 8px currentColor" },
-                            "data-countdown-time": !0,
-                            children: cdText(parts),
-                          }),
-                        ],
-                      }),
-                ],
-              })
-            : js(u.Fragment, {
-                children: [
-                  j(xf, { size: 14, className: "shrink-0 text-red-400/80" }),
-                  j("span", {
-                    className: "whitespace-nowrap font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-red-300/80",
-                    children: "+ Objetivo",
-                  }),
-                ],
-              }),
+  }, [sig]);
+  let editing = modal && modal.id ? items.find((x) => x.id === modal.id) : null,
+    rows = items.map((it) => {
+      let diff = cdTs(it.date) - now;
+      return { ...it, diff, expired: diff <= 0, urgent: diff > 0 && diff < 864e5 };
+    }),
+    add = items.length < CD_MAX;
+  return HX(
+    "div",
+    { className: "relative w-[min(300px,calc(100vw-5.5rem))] min-w-0", "data-countdown": !0 },
+    rows.length > 0 &&
+      HX(
+        "ul",
+        { className: "flex flex-col gap-0.5 normal-case tracking-normal", "aria-label": "Contagens regressivas" },
+        ...rows.map((r) =>
+          HX(
+            "li",
+            { key: r.id },
+            HX(
+              "button",
+              {
+                type: "button",
+                onClick: () => setModal({ id: r.id }),
+                title: `${r.name || "Objetivo"} \xB7 ${cdFmtDate(r.date)} \xB7 clique para editar`,
+                "aria-label": `${r.name || "Objetivo"}: ${r.expired ? "evento expirado" : cdText(cdParts(r.diff))} (editar)`,
+                "data-cd-row": r.id,
+                className:
+                  "group flex h-6 w-full items-center gap-2 border-l-2 bg-black/50 pr-2 text-left text-sm leading-none transition-colors max-[379px]:gap-1.5 max-[379px]:text-[12px] hover:bg-[#1c0a0e] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400",
+                style: { borderColor: r.expired ? "#ef4444" : r.urgent ? "#facc15" : "#22d3ee" },
+              },
+              r.icon
+                ? HX("img", { src: r.icon, alt: "", className: "h-6 w-6 shrink-0 rounded object-cover", "data-cd-icon": !0 })
+                : HX(
+                    "span",
+                    { className: "flex h-6 w-6 shrink-0 items-center justify-center rounded border border-cyan-500/40 bg-cyan-500/10" },
+                    HX(xf, { size: 13, className: r.expired ? "text-red-400" : "text-cyan-300" }),
+                  ),
+              HX(
+                "span",
+                { className: "min-w-0 flex-1 truncate font-semibold uppercase tracking-[0.06em] text-yellow-400/90 group-hover:text-yellow-300", "data-cd-name": !0 },
+                r.name || "Objetivo",
+              ),
+              r.expired
+                ? HX(
+                    "span",
+                    {
+                      className: "shrink-0 animate-pulse font-mono text-[12px] font-bold uppercase tracking-normal text-red-500 motion-reduce:animate-none",
+                      role: "status",
+                      "data-cd-expired": !0,
+                    },
+                    "[ Expirado ]",
+                  )
+                : HX(
+                    "span",
+                    {
+                      className: `shrink-0 whitespace-nowrap font-mono font-bold tabular-nums tracking-normal ${r.urgent ? "text-yellow-300" : "text-cyan-300"}`,
+                      style: { textShadow: "0 0 8px currentColor" },
+                      "data-cd-time": !0,
+                    },
+                    cdText(cdParts(r.diff)),
+                  ),
+            ),
+          ),
+        ),
+      ),
+    add &&
+      HX(
+        "button",
+        {
+          type: "button",
+          onClick: () => setModal({ id: null }),
+          "data-cd-add": !0,
+          className: `block w-full whitespace-nowrap text-right font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-red-300/60 transition-colors hover:text-cyan-300 focus-visible:text-cyan-300 focus-visible:outline-none ${rows.length ? "mt-1" : "py-2"}`,
+        },
+        "[ + Adicionar objetivo ]",
+      ),
+    modal &&
+      kbPortal(
+        HX(CountdownModal, {
+          key: modal.id || "new",
+          item: editing,
+          now,
+          onClose: () => setModal(null),
+          onSave: (v) =>
+            editing
+              ? setItems((xs) => xs.map((x) => (x.id === editing.id ? { ...x, ...v } : x)))
+              : setItems((xs) => (xs.length >= CD_MAX ? xs : [...xs, { id: Qe(), ...v }])),
+          onDelete: editing ? () => setItems((xs) => xs.filter((x) => x.id !== editing.id)) : void 0,
         }),
-      }),
-      open &&
-        j("form", {
-          onSubmit: save,
-          role: "dialog",
-          "aria-label": "Definir objetivo com contagem regressiva",
-          "data-countdown-pop": !0,
-          style: { "--cd-top": `${top}px` },
-          className:
-            "fixed inset-x-4 top-[var(--cd-top)] z-50 border-2 border-red-500 bg-[#12080b] p-4 normal-case tracking-normal shadow-[0_0_30px_rgba(239,68,68,.35)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[320px]",
-          children: js("div", {
-            className: "flex flex-col gap-3",
-            children: [
-              js("div", {
-                className: "flex items-start justify-between",
-                children: [
-                  js("div", {
-                    children: [
-                      j("div", { className: "text-[9px] tracking-[0.35em] text-red-500/80", children: "COUNTDOWN//OBJETIVO" }),
-                      j("h3", {
-                        className: "text-[15px] font-bold uppercase tracking-[0.15em] text-yellow-400",
-                        children: "Contagem regressiva",
-                      }),
-                    ],
-                  }),
-                  j("button", {
-                    type: "button",
-                    onClick: close,
-                    "aria-label": "Fechar",
-                    className: "p-1 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300",
-                    children: j(Da, { size: 18 }),
-                  }),
-                ],
-              }),
-              js("label", {
-                className: "block",
-                children: [
-                  j("span", {
-                    className: "mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-300",
-                    children: "Nome do objetivo / evento",
-                  }),
-                  j("input", {
-                    type: "text",
-                    maxLength: 40,
-                    autoFocus: !0,
-                    "aria-label": "Nome do objetivo ou evento",
-                    value: draft.name,
-                    placeholder: "Ex.: Mestrado, Casamento, Prova",
-                    onChange: (e) => setDraft((t) => ({ ...t, name: e.target.value })),
-                    className:
-                      "w-full border border-red-800 bg-[#0a0507] px-3 py-2 text-[14px] text-cyan-200 placeholder-red-900 transition-colors focus:border-cyan-400 focus:outline-none",
-                  }),
-                ],
-              }),
-              js("label", {
-                className: "block",
-                children: [
-                  j("span", {
-                    className: "mb-1 block text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-300",
-                    children: "Data e hora do evento",
-                  }),
-                  j("input", {
-                    type: "datetime-local",
-                    "aria-label": "Data e hora do evento",
-                    value: draft.date,
-                    onChange: (e) => (setDraft((t) => ({ ...t, date: e.target.value })), setErr("")),
-                    className:
-                      "w-full border border-red-800 bg-[#0a0507] px-3 py-2 font-mono text-[14px] text-cyan-200 transition-colors [color-scheme:dark] focus:border-cyan-400 focus:outline-none",
-                  }),
-                ],
-              }),
-              err
-                ? j("div", { role: "alert", className: "text-[12px] text-red-400", children: err })
-                : preview
-                  ? j("div", {
-                      className: `font-mono text-[12px] ${dTs <= Date.now() ? "text-red-400" : "text-yellow-300"}`,
-                      children: preview,
-                    })
-                  : null,
-              js("div", {
-                className: "flex items-center justify-between gap-2 pt-1",
-                children: [
-                  j("button", {
-                    type: "button",
-                    onClick: clear,
-                    className:
-                      "border border-red-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-widest text-red-400 transition-colors hover:bg-[#3b0f14] hover:text-red-200",
-                    children: "Limpar",
-                  }),
-                  j("button", {
-                    type: "submit",
-                    className:
-                      "bg-yellow-400 px-4 py-2 text-[12px] font-bold uppercase tracking-widest text-black transition-colors hover:bg-yellow-300",
-                    style: { clipPath: ot },
-                    children: "Salvar",
-                  }),
-                ],
-              }),
-            ],
-          }),
-        }),
-    ],
-  });
+      ),
+  );
 }
 
 // Ponto de montagem do bot\xE3o de Sincroniza\xE7\xE3o/Backup (o motor fica no script do <head>).
@@ -11034,6 +11734,13 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     // Kanban: array de painéis (Board -> Columns -> Cards) + painel ativo
     [kanbanBoards, setKanbanBoards] = (0, K.useState)(() => kbLoad().boards),
     [kanbanActive, setKanbanActive] = (0, K.useState)(() => kbLoad().active),
+    // Hábitos: [{ id, name, desc, icon, streak, lastCheckedDate, ... }] + dia atual (vira à meia-noite local)
+    [habits, setHabits] = (0, K.useState)(hbLoad),
+    [hbDay, setHbDay] = (0, K.useState)(hbToday),
+    // Contagens regressivas do HUB: [{ id, name, date, icon }] (até CD_MAX)
+    [countdowns, setCountdowns] = (0, K.useState)(cdLoadAll),
+    dayRef = (0, K.useRef)(""),
+    navRef = (0, K.useRef)(null),
     [U, Ie] = (0, K.useState)(Lie),
     [ue, be] = (0, K.useState)(null),
     [xe, Te] = (0, K.useState)(null),
@@ -11121,6 +11828,66 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     (0, K.useEffect)(() => {
       ti(KB_KEY, { v: 1, active: kanbanActive, boards: kanbanBoards }) || b(!0);
     }, [kanbanBoards, kanbanActive]),
+    (0, K.useEffect)(() => {
+      try {
+        if (!habits.length && localStorage.getItem(HB_KEY) === null) return;
+      } catch {}
+      ti(HB_KEY, habits) || b(!0);
+    }, [habits]),
+    (0, K.useEffect)(() => {
+      try {
+        if (!countdowns.length && localStorage.getItem(CD2_KEY) === null && localStorage.getItem(CD_KEY) === null) return;
+      } catch {}
+      ti(CD2_KEY, countdowns) || b(!0);
+    }, [countdowns]),
+    // Virada do dia (meia-noite, volta de suspensão, aba reaberta): recalcula as ofensivas sem recarregar a página
+    (0, K.useEffect)(() => {
+      dayRef.current = hbDay;
+      let chk = () => {
+          let d = hbToday();
+          if (d === dayRef.current) return;
+          ((dayRef.current = d),
+            setHbDay(d),
+            setHabits((hs) => {
+              let ch = !1,
+                out = hs.map((h) => {
+                  let x = hbNormalize(h, d);
+                  return (x !== h && (ch = !0), x);
+                });
+              return ch ? out : hs;
+            }));
+        },
+        id = setInterval(chk, 3e4);
+      return (
+        document.addEventListener("visibilitychange", chk),
+        window.addEventListener("focus", chk),
+        () => {
+          (clearInterval(id), document.removeEventListener("visibilitychange", chk), window.removeEventListener("focus", chk));
+        }
+      );
+    }, []),
+    // Atalhos globais: E = próxima aba · Q = aba anterior (ordem fixa TAB_ORDER, com loop nas pontas).
+    // Ignorados enquanto se digita (input/textarea/select/contentEditable), com Ctrl/Alt/Cmd ou com algum diálogo aberto.
+    (0, K.useEffect)(() => {
+      let typing = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)),
+        onKey = (ev) => {
+          if (ev.defaultPrevented || ev.repeat || ev.isComposing || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+          let k = String(ev.key || "").toLowerCase();
+          if ((k !== "q" && k !== "e") || typing(ev.target) || typing(document.activeElement)) return;
+          if (
+            Array.from(document.querySelectorAll('[aria-modal="true"],[role="dialog"],[role="alertdialog"]')).some(
+              (el) => el.getClientRects().length > 0,
+            )
+          )
+            return;
+          let cur = navRef.current;
+          if (!cur) return;
+          ev.preventDefault();
+          let i = Math.max(0, TAB_ORDER.indexOf(cur.tab));
+          cur.go(TAB_ORDER[(i + (k === "e" ? 1 : -1) + TAB_ORDER.length) % TAB_ORDER.length]);
+        };
+      return (window.addEventListener("keydown", onKey), () => window.removeEventListener("keydown", onKey));
+    }, []),
     (0, K.useEffect)(() => {
       let $ = {
         pages: L.map((J) => {
@@ -11466,6 +12233,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     b2 = ($) => z((J) => ({ ...J, money: $ })),
     Pr = Nt && nr[Nt.name],
     Ar;
+  navRef.current = { tab: n, go: lR };
   if (ta)
     Ar = (0, u.jsxs)("span", {
       className: `inline-flex max-w-full items-center justify-center gap-x-3 whitespace-nowrap font-semibold uppercase tracking-wider ${ta.tone === "warn" ? "text-yellow-400" : "text-cyan-300"}`,
@@ -11602,17 +12370,31 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
               }),
             ],
           }),
-          (0, u.jsx)("div", {
+          (0, u.jsxs)("div", {
             className:
-              "order-3 flex w-full min-w-0 justify-center xl:order-none xl:w-auto xl:flex-1 min-[1800px]:absolute min-[1800px]:left-1/2 min-[1800px]:top-4 min-[1800px]:w-auto min-[1800px]:-translate-x-1/2",
-            children: (0, u.jsx)(dle, { tab: n, onTab: lR }),
+              "order-3 flex w-full min-w-0 flex-col items-center xl:order-none xl:w-auto xl:flex-1",
+            children: [
+              (0, u.jsx)(dle, { tab: n, onTab: lR }),
+              // dica discreta dos atalhos (só em telas com teclado/mouse)
+              (0, u.jsxs)("div", {
+                className:
+                  "mt-1 hidden select-none items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.28em] text-cyan-400/50 lg:flex [@media(hover:none)]:hidden",
+                "aria-hidden": "true",
+                "data-qe-hint": !0,
+                children: [
+                  (0, u.jsx)("kbd", { className: "border border-cyan-500/40 bg-cyan-500/10 px-1 font-mono text-[9px] not-italic text-cyan-300/80", children: "Q" }),
+                  "\u25C4 Navegar \u25BA",
+                  (0, u.jsx)("kbd", { className: "border border-cyan-500/40 bg-cyan-500/10 px-1 font-mono text-[9px] not-italic text-cyan-300/80", children: "E" }),
+                ],
+              }),
+            ],
           }),
           (0, u.jsxs)("div", {
             className:
-              "ml-auto flex max-w-full shrink-0 items-center justify-end gap-2 pt-1 text-[12px] uppercase tracking-[0.2em] text-cyan-300 sm:gap-3",
+              "ml-auto flex max-w-full shrink-0 items-start justify-end gap-2 pt-1 text-[12px] uppercase tracking-[0.2em] text-cyan-300 sm:gap-3",
             children: [
               (0, u.jsxs)("div", {
-                className: "hidden items-center gap-2 min-[1800px]:flex",
+                className: "hidden h-8 items-center gap-2 min-[1800px]:flex",
                 children: [
                   (0, u.jsx)("span", { className: "inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-400" }),
                   (0, u.jsxs)("span", { children: ["N\xEDvel ", ws] }),
@@ -11620,7 +12402,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
               }),
               // Sincroniza\xE7\xE3o/Backup: s\xF3 existem no HUB principal (canto superior direito, ao lado do N\xEDvel)
               // Contagem regressiva: logo à esquerda do botão de Sincronização (só no HUB)
-              Ir && i === "hub" && (0, u.jsx)(CountdownWidget, {}),
+              Ir && i === "hub" && (0, u.jsx)(CountdownStack, { items: countdowns, setItems: setCountdowns }),
               Ir && i === "hub" && (0, u.jsx)(StbkSlot, {}),
             ],
           }),
@@ -11711,6 +12493,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
                 active: kanbanActive,
                 setActive: setKanbanActive,
               }),
+            n === "habits" && (0, u.jsx)(HabitsPage, { habits, setHabits, today: hbDay }),
           ],
         },
         Ir ? i : n,
