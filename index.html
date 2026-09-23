@@ -94,7 +94,35 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
   var SB_KEY = 'sb_publishable_A_DDf-7rfujBd22USiWM0g_g4j8oULo';
   var PREFIX = 'skilltree-';
   var STATE_KEY = 'stsync-state-v1';
+  var GEN_KEY = 'stsync-gen';        // muda a cada gravacao de dados: denuncia aba/janela desatualizada
   var TABLE = '/rest/v1/skilltree_kv';
+  var USER_WINDOW = 4000;            // gravacao ate 4 s depois de clique/tecla = alteracao feita pelo usuario
+  var SNAP_MAX = 12;                 // copias automaticas guardadas neste aparelho
+
+  /* Nomes amigaveis dos blocos de dados (painel de recuperacao) */
+  var NAMES = {
+    'skilltree-kanban-v1': 'Tarefas (Kanban)',
+    'skilltree-biolab-v1': 'Bio-lab: medidas, dieta, treino e evolução',
+    'skilltree-habits-v1': 'Hábitos',
+    'skilltree-countdown-v2': 'Contagens regressivas',
+    'skilltree-countdown-v1': 'Contagem regressiva (formato antigo)',
+    'skilltree-profile-v1': 'Status e dinheiro',
+    'skilltree-games-v1': 'Backlog de jogos',
+    'skilltree-fin-v1': 'Finanças',
+    'skilltree-wishlist-v1': 'Backlog de produtos',
+    'skilltree-pc-v1': 'Meu PC',
+    'skilltree-reading-v1': 'Leituras',
+    'skilltree-reading-bg-v1': 'Fundo das leituras',
+    'skilltree-plan-v1': 'Planejamento anual',
+    'skilltree-hud-v2': 'Níveis das habilidades',
+    'skilltree-hud-v1': 'Níveis (formato antigo)',
+    'skilltree-notes-v1': 'Missões das habilidades',
+    'skilltree-cats-v2': 'Categorias e habilidades',
+    'skilltree-cats-v1': 'Categorias (formato antigo)',
+    'skilltree-trophies-v1': 'Conquistas',
+    'skilltree-supp-v1': 'Suplementação',
+    'skilltree-name-v1': 'Nome do perfil'
+  };
 
   /* API usada pelo app (React) para encaixar o botão no cabeçalho do HUB.
      Definida logo de cara: o app pode montar antes de a interface existir. */
@@ -110,31 +138,76 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 
   var rawSet = Storage.prototype.setItem;
   var rawGet = Storage.prototype.getItem;
+  function lget(k) { try { return rawGet.call(ls, k); } catch (e) { return null; } }
+  function lset(k, v) { rawSet.call(ls, k, v); } // pode lançar (armazenamento cheio)
 
   /* ===== Estado persistido (fora do prefixo, nao entra no backup) ===== */
-  function loadState() {
+  function readState() {
     try {
-      var o = JSON.parse(rawGet.call(ls, STATE_KEY) || 'null');
+      var o = JSON.parse(lget(STATE_KEY) || 'null');
       if (o && typeof o === 'object') {
-        return { session: o.session || null, uid: o.uid || null, base: o.base || {}, dirty: o.dirty || {}, lastSync: o.lastSync || 0 };
+        return {
+          session: o.session || null, uid: o.uid || null, base: o.base || {}, dirty: o.dirty || {},
+          hard: o.hard || null, lastSync: o.lastSync || 0, outAt: o.outAt || 0
+        };
       }
     } catch (e) {}
-    return { session: null, uid: null, base: {}, dirty: {}, lastSync: 0 };
+    return { session: null, uid: null, base: {}, dirty: {}, hard: {}, lastSync: 0, outAt: 0 };
   }
-  var S = loadState();
-  function save() { try { rawSet.call(ls, STATE_KEY, JSON.stringify(S)); } catch (e) {} }
+  var S = readState();
+  // estados gravados por versoes antigas nao tinham "hard": as pendencias delas contam como alteracao do usuario
+  if (!S.hard) { S.hard = {}; Object.keys(S.dirty).forEach(function (k) { S.hard[k] = 1; }); }
+  var cleared = {}; // pendencias ja enviadas por esta aba (nao ressuscitar ao juntar com o estado de outra aba)
 
-  var reloading = false, syncing = false, again = false, timer = null;
-  var lastError = null, choice = null, lastAct = Date.now(), ui = null;
+  // Junta o estado salvo por outra aba/janela com o desta (varias abas abertas ao mesmo tempo)
+  function mergeState(o) {
+    if (o.outAt > (S.outAt || 0)) { // outra aba saiu da conta
+      S.session = null; S.uid = null; S.base = {}; S.dirty = {}; S.hard = {}; S.lastSync = 0; S.outAt = o.outAt;
+      return;
+    }
+    if (o.session && o.session.user && (!S.session || (o.session.user.id === S.session.user.id && (o.session.expires_at || 0) > (S.session.expires_at || 0)))) S.session = o.session;
+    if (o.uid && !S.uid && S.session && o.uid === S.session.user.id) S.uid = o.uid;
+    Object.keys(o.base || {}).forEach(function (k) { if (!S.base[k] || String(o.base[k]) > String(S.base[k])) S.base[k] = o.base[k]; });
+    Object.keys(o.dirty || {}).forEach(function (k) {
+      var t = o.dirty[k];
+      if (cleared[k] && cleared[k] >= t) return;
+      if (!S.dirty[k] || t > S.dirty[k]) S.dirty[k] = t;
+      if (o.hard && o.hard[k]) S.hard[k] = 1;
+    });
+    if ((o.lastSync || 0) > (S.lastSync || 0)) S.lastSync = o.lastSync;
+  }
+  function save() {
+    try { mergeState(readState()); } catch (e) {}
+    try { lset(STATE_KEY, JSON.stringify(S)); } catch (e) {}
+  }
+  // limpa TODAS as pendências (inclusive as que estão no estado salvo, para a junção entre abas não trazê-las de volta)
+  function undirtyAll() {
+    var now = Date.now(), o = readState();
+    Object.keys(S.dirty).concat(Object.keys(o.dirty || {})).forEach(function (k) { cleared[k] = Math.max(cleared[k] || 0, now); });
+    S.dirty = {}; S.hard = {};
+  }
+
+  var reloading = false, stale = false, syncing = false, again = false, timer = null;
+  var lastError = null, choice = null, lastAct = 0, ui = null;
+  var myGen = lget(GEN_KEY);
+  function bumpGen() {
+    myGen = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    try { lset(GEN_KEY, myGen); } catch (e) {}
+  }
 
   /* ===== Observa as gravacoes do app para saber o que mudou ===== */
   Storage.prototype.setItem = function (k, v) {
     if (this === ls && typeof k === 'string' && k.indexOf(PREFIX) === 0) {
-      if (reloading) return;
-      var old = null;
-      try { old = rawGet.call(this, k); } catch (e) {}
+      // aba desatualizada (outra aba mudou os dados) ou recarregando: não deixa gravar por cima
+      if (reloading || stale) return;
+      var old = lget(k);
       rawSet.call(this, k, v);
-      if (old !== String(v)) { S.dirty[k] = Date.now(); save(); scheduleSync(3000); render(); }
+      if (old !== String(v)) {
+        bumpGen();
+        S.dirty[k] = Date.now();
+        if (Date.now() - lastAct < USER_WINDOW) S.hard[k] = 1; // feita pelo usuário (não automática)
+        save(); scheduleSync(3000); render();
+      }
       return;
     }
     return rawSet.apply(this, arguments);
@@ -144,11 +217,213 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     var m = {};
     for (var i = 0; i < ls.length; i++) {
       var k = ls.key(i);
-      if (k && k.indexOf(PREFIX) === 0) m[k] = rawGet.call(ls, k);
+      if (k && k.indexOf(PREFIX) === 0) m[k] = lget(k);
     }
     return m;
   }
   function pendingCount() { return Object.keys(S.dirty).length; }
+
+  /* ===== Varias abas/janelas: a que ficou para tras recarrega antes de gravar dados velhos ===== */
+  function reloadGuard() {
+    var now = Date.now(), t = 0, n = 0;
+    try { var o = JSON.parse(sessionStorage.getItem('stsync-rl') || '{}'); t = o.t || 0; n = o.n || 0; } catch (e) {}
+    if (!t || now - t > 30000) { t = now; n = 0; }
+    n++;
+    try { sessionStorage.setItem('stsync-rl', JSON.stringify({ t: t, n: n })); } catch (e) {}
+    return n <= 5;
+  }
+  var banner = null;
+  function showBanner(text) {
+    if (banner || !document.body) return;
+    banner = document.createElement('div');
+    banner.setAttribute('role', 'alert');
+    banner.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483600;max-width:calc(100vw - 24px);background:#12080b;border:1px solid #facc15;color:#fde68a;font:600 14px Rajdhani,system-ui,sans-serif;padding:10px 14px;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.6);display:flex;gap:12px;align-items:center';
+    var sp = document.createElement('span'); sp.textContent = text;
+    var bt = document.createElement('button'); bt.type = 'button'; bt.textContent = 'Recarregar';
+    bt.style.cssText = 'cursor:pointer;border:1px solid #facc15;background:transparent;color:#facc15;font:700 13px Rajdhani,system-ui,sans-serif;padding:6px 10px;border-radius:6px';
+    bt.addEventListener('click', function () { location.reload(); });
+    banner.appendChild(sp); banner.appendChild(bt); document.body.appendChild(banner);
+  }
+  function goStale() {
+    if (stale || reloading) return;
+    stale = true; // a partir daqui esta aba não grava mais nada (a tela mostra dados velhos)
+    render();
+    if (reloadGuard()) { reloading = true; location.reload(); }
+    else showBanner('Os dados foram alterados em outra aba ou janela. Recarregue para continuar editando.');
+  }
+  window.addEventListener('storage', function (e) {
+    if (e.storageArea && e.storageArea !== ls) return;
+    if (e.key === STATE_KEY) { try { mergeState(readState()); render(); } catch (er) {} return; }
+    if (e.key === null || e.key === GEN_KEY || (e.key && e.key.indexOf(PREFIX) === 0)) goStale();
+  });
+  function checkGen() { if (lget(GEN_KEY) !== myGen) goStale(); }
+
+  /* ===== IndexedDB: versão-base de cada bloco (para mesclar) e cópias automáticas ===== */
+  var dbp = null;
+  function idb() {
+    if (dbp) return dbp;
+    dbp = new Promise(function (res) {
+      try {
+        if (!window.indexedDB) { res(null); return; }
+        var q = indexedDB.open('skilltree-sync', 1);
+        q.onupgradeneeded = function () {
+          var d = q.result;
+          if (!d.objectStoreNames.contains('base')) d.createObjectStore('base');
+          if (!d.objectStoreNames.contains('snapmeta')) d.createObjectStore('snapmeta', { keyPath: 'id' });
+          if (!d.objectStoreNames.contains('snapdata')) d.createObjectStore('snapdata');
+        };
+        q.onsuccess = function () { res(q.result); };
+        q.onerror = function () { res(null); };
+        q.onblocked = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+    return dbp;
+  }
+  function idbDo(stores, mode, fn) {
+    return idb().then(function (d) {
+      if (!d) return null;
+      return new Promise(function (res) {
+        try {
+          var t = d.transaction(stores, mode), out = { v: null };
+          fn(t, out);
+          t.oncomplete = function () { res(out.v); };
+          t.onerror = t.onabort = function () { res(null); };
+        } catch (e) { res(null); }
+      });
+    });
+  }
+  function baseGet(k) {
+    return idbDo('base', 'readonly', function (t, o) { var r = t.objectStore('base').get(k); r.onsuccess = function () { o.v = r.result; }; })
+      .then(function (v) { return typeof v === 'string' ? v : null; });
+  }
+  function basePut(k, v) { return idbDo('base', 'readwrite', function (t) { t.objectStore('base').put(v, k); }); }
+  function baseKeys() {
+    return idbDo('base', 'readonly', function (t, o) { var r = t.objectStore('base').getAllKeys(); r.onsuccess = function () { o.v = r.result; }; })
+      .then(function (a) { return a || []; });
+  }
+  function baseClear() { return idbDo('base', 'readwrite', function (t) { t.objectStore('base').clear(); }); }
+  function snapMetas() {
+    return idbDo('snapmeta', 'readonly', function (t, o) { var r = t.objectStore('snapmeta').getAll(); r.onsuccess = function () { o.v = r.result; }; })
+      .then(function (a) { return (a || []).sort(function (x, y) { return y.at - x.at; }); });
+  }
+  function snapData(id) {
+    return idbDo('snapdata', 'readonly', function (t, o) { var r = t.objectStore('snapdata').get(id); r.onsuccess = function () { o.v = r.result; }; });
+  }
+  function fnv(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+  // Guarda uma cópia de todos os dados (ou dos dados informados) neste aparelho
+  async function snapshot(reason, data) {
+    try {
+      data = data || localMap();
+      var keys = Object.keys(data);
+      if (!keys.length) return;
+      var text = JSON.stringify(data), sig = text.length + '.' + fnv(text);
+      var metas = await snapMetas();
+      if (metas.length && metas[0].sig === sig) return; // igual à última cópia
+      var at = Date.now();
+      await idbDo(['snapmeta', 'snapdata'], 'readwrite', function (t) {
+        t.objectStore('snapdata').put(data, at);
+        t.objectStore('snapmeta').put({ id: at, at: at, reason: reason, sig: sig, size: text.length, keys: keys });
+      });
+      metas = await snapMetas();
+      var old = metas.slice(SNAP_MAX);
+      if (old.length) {
+        await idbDo(['snapmeta', 'snapdata'], 'readwrite', function (t) {
+          old.forEach(function (m) { t.objectStore('snapmeta').delete(m.id); t.objectStore('snapdata').delete(m.id); });
+        });
+      }
+      if (ui && ui.panel.classList.contains('open')) renderSnaps();
+    } catch (e) {}
+  }
+
+  /* ===== Mescla de três vias: junta as alterações dos dois lados em vez de descartar uma =====
+     b = versão-base (a última sincronizada; undefined = desconhecida), l = deste aparelho, r = da nuvem.
+     o.pl: se os dois mudaram o MESMO campo, vale o local (senão, vale a nuvem).
+     o.keep: alterações automáticas (sem ação do usuário) não podem apagar nada. */
+  function isObj(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
+  function same(a, b) {
+    if (a === b) return true;
+    if (a === undefined || b === undefined) return false;
+    try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
+  }
+  function idOf(x) { return isObj(x) && (typeof x.id === 'string' || typeof x.id === 'number') && x.id !== '' ? '#' + x.id : null; }
+  function idMap(a) {
+    var m = {};
+    for (var i = 0; i < a.length; i++) { var id = idOf(a[i]); if (id === null || m[id]) return null; m[id] = a[i]; }
+    return m;
+  }
+  function prim(a) { return a.every(function (x) { return x === null || typeof x !== 'object'; }); }
+  function blank(x) { return x === undefined || x === null || x === '' || x === false || x === 0; }
+  function merge3(b, l, r, o) {
+    if (same(l, r)) return l;
+    if (b !== undefined) { if (same(b, l)) return r; if (same(b, r)) return l; }
+    if (isObj(l) && isObj(r)) return mergeObj(isObj(b) ? b : undefined, l, r, o);
+    if (Array.isArray(l) && Array.isArray(r)) return mergeArr(Array.isArray(b) ? b : undefined, l, r, o);
+    // sem versão-base não dá para saber quem mudou: nunca troca um valor preenchido por um vazio
+    if (b === undefined && blank(l) !== blank(r)) return blank(l) ? r : l;
+    return o.pl ? l : r;
+  }
+  function mergeObj(b, l, r, o) {
+    var out = {};
+    Object.keys(l).forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(r, k)) out[k] = merge3(b && Object.prototype.hasOwnProperty.call(b, k) ? b[k] : undefined, l[k], r[k], o);
+      else if (b && Object.prototype.hasOwnProperty.call(b, k) && same(b[k], l[k])) { /* apagado na nuvem */ }
+      else out[k] = l[k];
+    });
+    Object.keys(r).forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(l, k)) return;
+      if (b && Object.prototype.hasOwnProperty.call(b, k) && same(b[k], r[k]) && !o.keep) return; // apagado aqui
+      out[k] = r[k];
+    });
+    return out;
+  }
+  function mergeArr(b, l, r, o) {
+    var ml = idMap(l), mr = idMap(r), mb = b ? idMap(b) : {};
+    if (ml && mr && mb && (l.length || r.length)) {
+      // lista de objetos com id (painéis, colunas, cartões, hábitos, refeições, registros...): item a item
+      var res = [];
+      l.forEach(function (x) {
+        var id = idOf(x);
+        if (mr[id] !== undefined) res.push(merge3(b && mb[id] !== undefined ? mb[id] : undefined, x, mr[id], o));
+        else if (b && mb[id] !== undefined && same(mb[id], x)) { /* apagado na nuvem */ }
+        else res.push(x);
+      });
+      r.forEach(function (x, i) {
+        var id = idOf(x);
+        if (ml[id] !== undefined) return;
+        if (b && mb[id] !== undefined && same(mb[id], x) && !o.keep) return; // apagado aqui
+        // entra logo depois do vizinho anterior (na ordem da nuvem) que já está no resultado
+        var at = 0;
+        for (var j = i - 1; j >= 0; j--) {
+          var pid = idOf(r[j]), idx = -1;
+          for (var q = 0; q < res.length; q++) if (idOf(res[q]) === pid) { idx = q; break; }
+          if (idx >= 0) { at = idx + 1; break; }
+        }
+        res.splice(at, 0, x);
+      });
+      return res;
+    }
+    var sameLen = l.length === r.length && (!b || b.length === l.length);
+    if (prim(l) && prim(r) && (!b || prim(b)) && !sameLen) {
+      // conjunto (datas do histórico, anos...): une as adições e aplica as remoções
+      var out = l.filter(function (x) { return !(b && b.indexOf(x) >= 0 && r.indexOf(x) < 0); });
+      r.forEach(function (x) {
+        if (out.indexOf(x) >= 0 || l.indexOf(x) >= 0) return;
+        if (b && b.indexOf(x) >= 0 && !o.keep) return; // apagado aqui
+        out.push(x);
+      });
+      return out;
+    }
+    if (sameLen) return l.map(function (x, i) { return merge3(b ? b[i] : undefined, x, r[i], o); }); // posição a posição
+    return o.pl ? l : r;
+  }
+  // Mescla dois textos JSON. Devolve null quando não dá (texto simples, JSON inválido).
+  function mergeValues(bs, lv, rv, hard) {
+    var b, l, r;
+    try { l = JSON.parse(lv); r = JSON.parse(rv); } catch (e) { return null; }
+    if (!l || typeof l !== 'object' || !r || typeof r !== 'object') return null;
+    if (bs !== null && bs !== undefined) { try { b = JSON.parse(bs); } catch (e) { b = undefined; } }
+    return JSON.stringify(merge3(b, l, r, { pl: !!hard, keep: !hard }));
+  }
 
   /* ===== Rede ===== */
   function friendly(j, st) {
@@ -180,6 +455,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
   function signedOut() { var e = new Error('Sessão expirada. Entre de novo.'); e.code = 'signed_out'; return e; }
 
   async function getToken() {
+    try { mergeState(readState()); } catch (e) {} // outra aba pode ter renovado a sessão
     var s = S.session;
     if (!s) throw signedOut();
     if (s.expires_at - 60 > Date.now() / 1000) return s.access_token;
@@ -189,7 +465,12 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
       setSession(j);
       return S.session.access_token;
     } catch (e) {
-      if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) { S.session = null; save(); throw signedOut(); }
+      if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) {
+        // o token pode ter sido renovado por outra aba enquanto isso
+        var o = readState();
+        if (o.session && o.session.refresh_token !== s.refresh_token && o.session.expires_at - 60 > Date.now() / 1000) { S.session = o.session; return S.session.access_token; }
+        S.session = null; save(); throw signedOut();
+      }
       throw e;
     }
   }
@@ -210,31 +491,45 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     return rest('?select=item_key,item_value,updated_at' + (keys ? '&item_key=in.' + inList(keys) : ''));
   }
 
+  // Envia um bloco SÓ se a nuvem ainda estiver na versão que conhecemos (nunca grava por cima de alteração de outro aparelho)
+  async function pushKey(k, v) {
+    var uid = S.session.user.id, base = S.base[k], rows;
+    if (base) {
+      rows = await rest('?user_id=eq.' + encodeURIComponent(uid) + '&item_key=eq.' + encodeURIComponent(k) +
+        '&updated_at=eq.' + encodeURIComponent(base) + '&select=item_key,updated_at',
+        { method: 'PATCH', prefer: 'return=representation', body: { item_value: v } });
+      return rows && rows[0] ? rows[0] : 'conflict';
+    }
+    try {
+      rows = await rest('?select=item_key,updated_at', { method: 'POST', prefer: 'return=representation', body: [{ user_id: uid, item_key: k, item_value: v }] });
+    } catch (e) {
+      if (e.status === 409 || e.code === '23505') return 'conflict'; // já existe na nuvem: mescla no próximo ciclo
+      throw e;
+    }
+    return rows && rows[0] ? rows[0] : 'conflict';
+  }
   async function pushKeys(keys) {
-    var uid = S.session.user.id;
     for (var i = 0; i < keys.length; i++) {
-      var k = keys[i], v = rawGet.call(ls, k);
-      if (v === null) { delete S.dirty[k]; continue; }
-      var rows = await rest('?on_conflict=user_id,item_key&select=item_key,updated_at', {
-        method: 'POST', prefer: 'resolution=merge-duplicates,return=representation',
-        body: [{ user_id: uid, item_key: k, item_value: v }]
-      });
-      if (rows[0]) {
-        S.base[k] = rows[0].updated_at;
-        if (rawGet.call(ls, k) === v) delete S.dirty[k];
-      }
+      var k = keys[i], v = lget(k), t0 = S.dirty[k] || 0;
+      if (v === null) { delete S.dirty[k]; delete S.hard[k]; continue; }
+      var row = await pushKey(k, v);
+      if (row === 'conflict') { again = true; continue; } // outro aparelho gravou antes: mescla em seguida
+      S.base[k] = row.updated_at;
+      basePut(k, v);
+      if (lget(k) === v && (S.dirty[k] || 0) <= t0) { delete S.dirty[k]; delete S.hard[k]; cleared[k] = t0 || Date.now(); }
       save();
     }
   }
 
   function reloadNow() {
-    var now = Date.now(), t = 0, n = 0;
-    try { var o = JSON.parse(sessionStorage.getItem('stsync-rl') || '{}'); t = o.t || 0; n = o.n || 0; } catch (e) {}
-    if (!t || now - t > 30000) { t = now; n = 0; }
-    n++;
-    try { sessionStorage.setItem('stsync-rl', JSON.stringify({ t: t, n: n })); } catch (e) {}
-    if (n > 4) { lastError = 'Muitas recargas seguidas; atualização automática pausada.'; render(); return false; }
+    if (!reloadGuard()) { lastError = 'Muitas recargas seguidas; atualização automática pausada.'; render(); showBanner('Dados atualizados pela sincronização. Recarregue para ver a versão mais nova.'); return false; }
     reloading = true; save(); location.reload(); return true;
+  }
+  var held = false;
+  function hold() {
+    // a partir daqui a tela está desatualizada até recarregar: o app não pode gravar por cima do que chegou
+    if (held) return;
+    held = true; stale = true; bumpGen();
   }
 
   /* ===== Primeira conexao deste aparelho com a conta ===== */
@@ -244,14 +539,15 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     var local = localMap();
     var lkeys = Object.keys(local);
     if (!rows.length) {
+      S.base = {};
       await pushKeys(lkeys);
-      S.uid = uid; S.dirty = {}; save();
+      S.uid = uid; save();
       return;
     }
-    var same = rows.every(function (r) { return local[r.item_key] === r.item_value; });
-    if (same) {
-      rows.forEach(function (r) { S.base[r.item_key] = r.updated_at; });
-      S.uid = uid; S.dirty = {}; save();
+    var same0 = rows.every(function (r) { return local[r.item_key] === r.item_value; });
+    if (same0) {
+      rows.forEach(function (r) { S.base[r.item_key] = r.updated_at; basePut(r.item_key, r.item_value); });
+      S.uid = uid; undirtyAll(); save();
       var cloudKeys = rows.map(function (r) { return r.item_key; });
       var extra = lkeys.filter(function (k) { return cloudKeys.indexOf(k) < 0; });
       if (extra.length) await pushKeys(extra);
@@ -263,23 +559,31 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
   async function chooseCloud() {
     if (!choice) return;
     var rows = choice.rows;
-    rows.forEach(function (r) {
-      if (rawGet.call(ls, r.item_key) !== r.item_value) rawSet.call(ls, r.item_key, r.item_value);
-      S.base[r.item_key] = r.updated_at;
-    });
-    S.uid = S.session.user.id; S.dirty = {}; save();
+    await snapshot('Antes de usar os dados da nuvem');
+    hold();
+    try {
+      rows.forEach(function (r) {
+        if (lget(r.item_key) !== r.item_value) lset(r.item_key, r.item_value);
+        S.base[r.item_key] = r.updated_at; basePut(r.item_key, r.item_value);
+      });
+    } catch (e) { sMsg('Armazenamento cheio: não foi possível trazer tudo da nuvem.', 'err'); }
+    S.uid = S.session.user.id; undirtyAll(); save();
     choice = null; render();
     reloadNow();
   }
   async function chooseLocal() {
     if (!choice) return;
+    var rows = choice.rows, cloud = {};
+    rows.forEach(function (r) { cloud[r.item_key] = r.item_value; S.base[r.item_key] = r.updated_at; });
+    await snapshot('Dados da nuvem antes de serem substituídos', cloud); // dá para recuperar pela lista de cópias
     choice = null; render();
     syncing = true; lastError = null; render();
     try {
       await pushKeys(Object.keys(localMap()));
-      S.uid = S.session.user.id; S.dirty = {}; S.lastSync = Date.now(); save();
+      S.uid = S.session.user.id; S.lastSync = Date.now(); save();
     } catch (e) { handleErr(e); }
     syncing = false; render();
+    if (again) { again = false; scheduleSync(500); }
   }
 
   /* ===== Ciclo de sincronizacao ===== */
@@ -290,32 +594,52 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     var remote = {};
     meta.forEach(function (r) { remote[r.item_key] = r.updated_at; });
 
-    var pull = [], push = [];
+    var pull = [], merge = [], push = [];
     Object.keys(remote).forEach(function (k) {
-      if (S.base[k] !== remote[k]) {
-        if (S.dirty[k]) { if (Date.parse(remote[k]) > S.dirty[k]) pull.push(k); else push.push(k); }
-        else pull.push(k);
-      }
+      if (S.base[k] === remote[k]) return;
+      if (S.dirty[k]) merge.push(k); else pull.push(k);
     });
     Object.keys(S.dirty).forEach(function (k) {
-      if (push.indexOf(k) < 0 && pull.indexOf(k) < 0 && (!(k in remote) || S.base[k] === remote[k])) push.push(k);
+      if (merge.indexOf(k) >= 0 || pull.indexOf(k) >= 0) return;
+      if (!(k in remote)) delete S.base[k]; // não existe na nuvem: envia como bloco novo
+      push.push(k);
     });
 
-    var noPull = reason === 'hide' || ((reason === 'change' || reason === 'poll') && Date.now() - lastAct < 15000);
-    if (noPull) pull = [];
+    // Enquanto o usuário mexe na tela não aplica dados da nuvem (evita recarregar no meio da edição).
+    // Blocos em conflito também esperam: nunca são enviados por cima de uma versão que não conhecemos.
+    var active = (reason === 'change' || reason === 'poll') && Date.now() - lastAct < 15000;
+    if (active) { pull = []; merge = []; }
 
-    var changed = false;
-    if (pull.length) {
-      var rows = await fetchRows(pull);
-      rows.forEach(function (r) {
-        if (rawGet.call(ls, r.item_key) !== r.item_value) { rawSet.call(ls, r.item_key, r.item_value); changed = true; }
-        S.base[r.item_key] = r.updated_at;
-        delete S.dirty[r.item_key];
-      });
+    // versão-base dos blocos já sincronizados (necessária para mesclar no futuro)
+    var known = await baseKeys();
+    Object.keys(remote).forEach(function (k) {
+      if (S.base[k] === remote[k] && !S.dirty[k] && known.indexOf(k) < 0) { var v = lget(k); if (v !== null) basePut(k, v); }
+    });
+
+    var changed = false, incoming = pull.concat(merge);
+    if (incoming.length) {
+      var rows = await fetchRows(incoming);
+      if (rows.some(function (r) { return lget(r.item_key) !== r.item_value; })) await snapshot('Antes de receber dados da nuvem');
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i], k = r.item_key, local = lget(k), next = r.item_value, isMerge = merge.indexOf(k) >= 0 && S.dirty[k];
+        if (isMerge) {
+          var m = mergeValues(await baseGet(k), local, r.item_value, !!S.hard[k]);
+          next = m !== null ? m : S.hard[k] ? local : r.item_value; // texto simples: vale a alteração do usuário
+        }
+        if (next !== local) {
+          hold();
+          try { lset(k, next); } catch (e) { lastError = 'Armazenamento do navegador cheio: libere espaço (imagens grandes).'; continue; }
+          changed = true;
+        }
+        S.base[k] = r.updated_at; basePut(k, r.item_value);
+        if (next === r.item_value) { delete S.dirty[k]; delete S.hard[k]; cleared[k] = Date.now(); }
+        else { S.dirty[k] = Date.now(); push.push(k); } // resultado mesclado sobe para a nuvem
+      }
       save();
     }
+    // chegou dado novo: recarrega já (a tela estava desatualizada); o resultado mesclado sobe no próximo ciclo
+    if (changed && reloadNow()) return;
     await pushKeys(push);
-    if (changed) reloadNow();
   }
 
   function handleErr(e) {
@@ -327,7 +651,9 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
   function alertOut(text) { if (ui) { sMsg(text, 'warn'); openPanel(true); } }
 
   async function runSync(reason) {
-    if (!S.session || choice) return;
+    if (!S.session || choice || stale || reloading) return;
+    // só a aba visível sincroniza (a oculta só envia o que tiver pendente ao sair)
+    if (document.visibilityState === 'hidden' && reason !== 'hide') return;
     if (syncing) { again = true; return; }
     syncing = true; lastError = null; render();
     try {
@@ -339,7 +665,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
       if (!choice) { S.lastSync = Date.now(); save(); }
     } catch (e) { handleErr(e); }
     syncing = false; render();
-    if (again) { again = false; scheduleSync(500); }
+    if (again && !stale) { again = false; scheduleSync(800); }
   }
   function scheduleSync(ms) {
     if (!S.session) return;
@@ -355,7 +681,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     '#stbk-btn svg{width:18px;height:18px}' +
     '#stbk-dot{position:absolute;top:1px;right:1px;width:11px;height:11px;border-radius:50%;border:2px solid #0b0b0e;display:none}' +
     '#stbk-dot.k-ok{background:#4ade80}#stbk-dot.k-pending,#stbk-dot.k-syncing,#stbk-dot.k-choice{background:#facc15}#stbk-dot.k-error{background:#f87171}' +
-    '#stbk-panel{position:fixed;right:16px;top:64px;z-index:2147483000;width:min(340px,calc(100vw - 32px));max-height:calc(100vh - 84px);overflow:auto;background:#0b0b0e;border:1px solid rgba(34,211,238,.4);border-radius:10px;padding:16px;color:#e5e7eb;font-family:Rajdhani,system-ui,sans-serif;font-size:15px;line-height:1.35;box-shadow:0 10px 40px rgba(0,0,0,.6);display:none;box-sizing:border-box}' +
+    '#stbk-panel{position:fixed;right:16px;top:64px;z-index:2147483000;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 84px);overflow:auto;background:#0b0b0e;border:1px solid rgba(34,211,238,.4);border-radius:10px;padding:16px;color:#e5e7eb;font-family:Rajdhani,system-ui,sans-serif;font-size:15px;line-height:1.35;box-shadow:0 10px 40px rgba(0,0,0,.6);display:none;box-sizing:border-box}' +
     '#stbk-panel *{box-sizing:border-box}#stbk-panel.open{display:block}' +
     '#stbk-panel h2{margin:0 0 6px;font-family:Orbitron,Rajdhani,sans-serif;font-size:13px;letter-spacing:.14em;color:#22d3ee;font-weight:700}' +
     '#stbk-panel p{margin:0 0 10px;color:#9ca3af}' +
@@ -364,7 +690,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     '#stbk-panel input[type=email],#stbk-panel input[type=password]{width:100%;margin:0 0 8px;padding:10px;border-radius:6px;border:1px solid #374151;background:#050506;color:#e5e7eb;font:16px Rajdhani,system-ui,sans-serif}' +
     '#stbk-panel input:focus-visible{outline:2px solid #22d3ee;outline-offset:1px}' +
     '#stbk-panel button.stbk-a{flex:1;cursor:pointer;font:600 15px Rajdhani,system-ui,sans-serif;letter-spacing:.04em;padding:10px 8px;border-radius:6px;background:transparent;min-height:42px}' +
-    '#stbk-panel button.stbk-a:focus-visible{outline:2px solid #facc15;outline-offset:2px}' +
+    '#stbk-panel button.stbk-a:focus-visible,#stbk-panel button.stbk-m:focus-visible{outline:2px solid #facc15;outline-offset:2px}' +
     '#stbk-panel button.stbk-a:disabled{opacity:.5;cursor:default}' +
     '.stbk-c{border:1px solid #22d3ee;color:#22d3ee}.stbk-c:hover{background:rgba(34,211,238,.12)}' +
     '.stbk-r{border:1px solid #ef4444;color:#ef4444}.stbk-r:hover{background:rgba(239,68,68,.12)}' +
@@ -376,6 +702,15 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     '#stbk-choice,#stbk-confirm{display:none;margin-top:12px;border-top:1px solid #1f2937;padding-top:12px}' +
     '#stbk-choice.open,#stbk-confirm.open{display:block}#stbk-choice p,#stbk-confirm p{color:#e5e7eb}' +
     '#stbk-choice .stbk-row{flex-wrap:wrap}' +
+    '#stbk-snaps{display:flex;flex-direction:column;gap:6px}' +
+    '.stbk-snap{border:1px solid #1f2937;border-radius:6px;padding:8px 10px}' +
+    '.stbk-snap-h{display:flex;align-items:center;justify-content:space-between;gap:8px}' +
+    '.stbk-snap-t{font-size:14px;color:#e5e7eb;font-weight:600}.stbk-snap-s{font-size:12px;color:#9ca3af}' +
+    '#stbk-panel button.stbk-m{cursor:pointer;font:600 12px Rajdhani,system-ui,sans-serif;letter-spacing:.04em;padding:5px 8px;border-radius:5px;background:transparent;white-space:nowrap}' +
+    '.stbk-keys{margin-top:8px;border-top:1px dashed #1f2937;padding-top:8px}' +
+    '.stbk-keys label{display:flex;gap:8px;align-items:flex-start;font-size:14px;margin:5px 0;color:#e5e7eb;cursor:pointer}' +
+    '.stbk-keys input{margin-top:3px;accent-color:#22d3ee}' +
+    '.stbk-empty{font-size:13px;color:#6b7280}' +
     '@media print{#stbk-btn,#stbk-panel{display:none!important}}';
 
   var html =
@@ -413,14 +748,23 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
         '<div id="stbk-confirm"><p id="stbk-confirm-text"></p><div class="stbk-row"><button id="stbk-ok" class="stbk-a stbk-r" type="button">Substituir</button><button id="stbk-cancel" class="stbk-a stbk-g" type="button">Cancelar</button></div></div>' +
         '<div id="stbk-msg" class="stbk-msg" role="status" aria-live="polite"></div>' +
       '</div>' +
+      '<div class="stbk-sec">' +
+        '<h2>CÓPIAS AUTOMÁTICAS</h2>' +
+        '<p>Este aparelho guarda cópias dos seus dados: uma por dia e outra antes de cada atualização que chega da nuvem. Use para recuperar algo que sumiu.</p>' +
+        '<div id="stbk-snaps"><div class="stbk-empty">Carregando…</div></div>' +
+        '<div id="stbk-rmsg" class="stbk-msg" role="status" aria-live="polite"></div>' +
+      '</div>' +
     '</div>';
 
   function $(id) { return document.getElementById(id); }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function hhmm(ts) { var d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
-  function stamp() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function ddmm(ts) { var d = new Date(ts); return pad(d.getDate()) + '/' + pad(d.getMonth() + 1); }
+  function stamp(ts) { var d = ts ? new Date(ts) : new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function kb(n) { return n > 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
   function sMsg(t, k) { if (!ui) return; ui.smsg.className = 'stbk-msg ' + (k || ''); ui.smsg.textContent = t || ''; }
   function bMsg(t, k) { if (!ui) return; ui.msg.className = 'stbk-msg ' + (k || ''); ui.msg.textContent = t || ''; }
+  function rMsg(t, k) { if (!ui) return; ui.rmsg.className = 'stbk-msg ' + (k || ''); ui.rmsg.textContent = t || ''; }
 
   function kind() {
     if (choice) return 'choice';
@@ -440,11 +784,12 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     if (logged) {
       ui.user.textContent = S.session.user.email;
       var t = { choice: 'Aguardando a sua escolha abaixo.', syncing: 'Sincronizando…', error: 'Falha ao sincronizar: ' + lastError, pending: 'Alterações aguardando envio…', ok: S.lastSync ? 'Sincronizado às ' + hhmm(S.lastSync) : 'Conectado.' }[k];
+      if (stale) t = 'Dados atualizados — recarregando…';
       ui.status.textContent = t; ui.status.className = 'k-' + k;
-      ui.now.disabled = syncing || !!choice;
+      ui.now.disabled = syncing || !!choice || stale;
     }
     if (choice) {
-      ui.choiceText.textContent = 'A nuvem já tem dados (' + choice.rows.length + ' ite' + (choice.rows.length === 1 ? 'm' : 'ns') + ') diferentes dos deste aparelho. Qual versão você quer manter? A outra será substituída. Se tiver dúvida, cancele, exporte um backup e tente de novo.';
+      ui.choiceText.textContent = 'A nuvem já tem dados (' + choice.rows.length + ' ite' + (choice.rows.length === 1 ? 'm' : 'ns') + ') diferentes dos deste aparelho. Qual versão você quer manter? A outra será substituída (uma cópia dela fica guardada em “Cópias automáticas”).';
     }
   }
   function openPanel(open) {
@@ -457,19 +802,82 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     }
     ui.panel.classList.toggle('open', open);
     ui.btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (!open) { closeConfirm(); bMsg(''); if (!lastError) sMsg(''); }
+    if (open) renderSnaps();
+    if (!open) { closeConfirm(); bMsg(''); rMsg(''); if (!lastError) sMsg(''); }
   }
   var pendingImport = null, pendingPartial = false;
   function closeConfirm() { pendingImport = null; pendingPartial = false; if (ui) ui.confirmBox.classList.remove('open'); }
 
-  function download(text, name) {
+  function download(text, name, msg) {
     var blob = new Blob([text], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url; a.download = name; a.style.display = 'none';
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
-    bMsg('Backup exportado: ' + name, 'ok');
+    (msg || bMsg)('Arquivo salvo: ' + name, 'ok');
+  }
+
+  /* ===== Lista de cópias automáticas + recuperação por bloco ===== */
+  var openSnap = null;
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  async function renderSnaps() {
+    if (!ui) return;
+    var box = ui.snaps, metas = await snapMetas();
+    box.innerHTML = '';
+    if (!(await idb())) { box.appendChild(el('div', 'stbk-empty', 'Este navegador não permite guardar cópias automáticas (navegação privada?). Use “Exportar” para guardar seus dados.')); return; }
+    if (!metas.length) { box.appendChild(el('div', 'stbk-empty', 'Nenhuma cópia ainda (a primeira é feita hoje).')); return; }
+    metas.forEach(function (m) {
+      var item = el('div', 'stbk-snap'), h = el('div', 'stbk-snap-h'), info = el('div');
+      info.appendChild(el('div', 'stbk-snap-t', ddmm(m.at) + ' às ' + hhmm(m.at)));
+      info.appendChild(el('div', 'stbk-snap-s', m.reason + ' · ' + kb(m.size)));
+      var acts = el('div', 'stbk-row');
+      var bRec = el('button', 'stbk-m stbk-c', 'Recuperar'); bRec.type = 'button';
+      var bDl = el('button', 'stbk-m stbk-g', 'Baixar'); bDl.type = 'button'; bDl.title = 'Baixar esta cópia como arquivo de backup';
+      acts.appendChild(bRec); acts.appendChild(bDl);
+      h.appendChild(info); h.appendChild(acts); item.appendChild(h);
+      bDl.addEventListener('click', async function () {
+        var data = await snapData(m.id);
+        if (!data) { rMsg('Não consegui ler esta cópia.', 'err'); return; }
+        download(JSON.stringify({ app: 'skilltree', version: 1, exportedAt: new Date(m.at).toISOString(), data: data }), 'skilltree-copia-' + stamp(m.at) + '-' + hhmm(m.at).replace(':', 'h') + '.json', rMsg);
+      });
+      bRec.addEventListener('click', function () { openSnap = openSnap === m.id ? null : m.id; renderSnaps(); });
+      if (openSnap === m.id) item.appendChild(restoreBox(m));
+      box.appendChild(item);
+    });
+  }
+  function restoreBox(m) {
+    var wrap = el('div', 'stbk-keys');
+    snapData(m.id).then(function (data) {
+      if (!data) { wrap.appendChild(el('div', 'stbk-empty', 'Não consegui ler esta cópia.')); return; }
+      var cur = localMap(), diff = Object.keys(data).filter(function (k) { return cur[k] !== data[k]; });
+      if (!diff.length) { wrap.appendChild(el('div', 'stbk-empty', 'Esta cópia é igual aos dados atuais.')); return; }
+      wrap.appendChild(el('div', 'stbk-snap-s', 'Escolha o que voltar para esta versão (o resto fica como está):'));
+      var checks = [];
+      diff.sort(function (a, b) { return (NAMES[a] || a).localeCompare(NAMES[b] || b); }).forEach(function (k) {
+        var lab = el('label'), cb = el('input'); cb.type = 'checkbox'; cb.value = k;
+        lab.appendChild(cb); lab.appendChild(el('span', '', NAMES[k] || k));
+        checks.push(cb); wrap.appendChild(lab);
+      });
+      var row = el('div', 'stbk-row'); row.style.marginTop = '8px';
+      var go = el('button', 'stbk-a stbk-r', 'Recuperar selecionados'); go.type = 'button';
+      var no = el('button', 'stbk-a stbk-g', 'Cancelar'); no.type = 'button';
+      row.appendChild(go); row.appendChild(no); wrap.appendChild(row);
+      no.addEventListener('click', function () { openSnap = null; renderSnaps(); });
+      go.addEventListener('click', async function () {
+        var keys = checks.filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+        if (!keys.length) { rMsg('Marque pelo menos um item.', 'warn'); return; }
+        if (stale || reloading) { rMsg('Os dados mudaram em outra aba. Recarregue a página e tente de novo.', 'err'); return; }
+        await snapshot('Antes de recuperar uma cópia');
+        lastAct = Date.now(); // conta como alteração do usuário (vale em conflito na nuvem)
+        try { keys.forEach(function (k) { ls.setItem(k, data[k]); }); }
+        catch (e) { rMsg('Armazenamento cheio: não foi possível recuperar.', 'err'); return; }
+        rMsg('Recuperado. Recarregando…', 'ok');
+        save(); reloading = true;
+        setTimeout(function () { location.reload(); }, 600);
+      });
+    });
+    return wrap;
   }
 
   async function doAuth(mode) {
@@ -494,7 +902,9 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
   function logout() {
     var tok = S.session && S.session.access_token;
     if (tok) { try { fetch(SB_URL + '/auth/v1/logout', { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + tok } }).catch(function () {}); } catch (e) {} }
-    S.session = null; S.uid = null; S.base = {}; S.dirty = {}; S.lastSync = 0; save();
+    S.session = null; S.uid = null; S.base = {}; S.dirty = {}; S.hard = {}; S.lastSync = 0; S.outAt = Date.now();
+    try { lset(STATE_KEY, JSON.stringify(S)); } catch (e) {}
+    baseClear();
     choice = null; lastError = null; clearTimeout(timer); render(); sMsg('Você saiu. Os dados continuam salvos neste aparelho.', 'ok');
   }
 
@@ -505,7 +915,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
       wrap: wrap, btn: $('stbk-btn'), dot: $('stbk-dot'), panel: $('stbk-panel'),
       out: $('stbk-out'), inn: $('stbk-in'), user: $('stbk-user'), status: $('stbk-status'),
       mail: $('stbk-mail'), pass: $('stbk-pass'), login: $('stbk-login'), signup: $('stbk-signup'),
-      now: $('stbk-now'), smsg: $('stbk-smsg'), msg: $('stbk-msg'),
+      now: $('stbk-now'), smsg: $('stbk-smsg'), msg: $('stbk-msg'), rmsg: $('stbk-rmsg'), snaps: $('stbk-snaps'),
       choiceBox: $('stbk-choice'), choiceText: $('stbk-choice-text'),
       file: $('stbk-file'), confirmBox: $('stbk-confirm'), confirmText: $('stbk-confirm-text')
     };
@@ -567,38 +977,45 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
           ui.confirmBox.classList.add('open');
           return;
         }
-        ui.confirmText.textContent = 'Backup' + when + ' com ' + n + ' ite' + (n === 1 ? 'm' : 'ns') + '. Isso substitui todos os dados deste aparelho' + (S.session ? ' (e, com a sincronização ligada, também os da nuvem)' : '') + '. Exporte antes se quiser guardar os atuais.';
+        ui.confirmText.textContent = 'Backup' + when + ' com ' + n + ' ite' + (n === 1 ? 'm' : 'ns') + '. Isso substitui todos os dados deste aparelho' + (S.session ? ' (e, com a sincronização ligada, também os da nuvem)' : '') + '. Os dados atuais ficam guardados em “Cópias automáticas”.';
         ui.confirmBox.classList.add('open');
       };
       reader.readAsText(f);
     });
     $('stbk-cancel').addEventListener('click', function () { closeConfirm(); bMsg(''); });
-    $('stbk-ok').addEventListener('click', function () {
+    $('stbk-ok').addEventListener('click', async function () {
       if (!pendingImport) return;
-      var entries = pendingImport, old = localMap(), partial = pendingPartial;
+      if (stale || reloading) { closeConfirm(); bMsg('Os dados mudaram em outra aba. Recarregue a página e tente de novo.', 'err'); return; }
+      var entries = pendingImport, partial = pendingPartial;
+      closeConfirm();
+      await snapshot('Antes de importar um backup');
+      var old = localMap();
+      lastAct = Date.now();
       try {
         if (!partial) Object.keys(old).forEach(function (k) { ls.removeItem(k); });
         Object.keys(entries).forEach(function (k) { ls.setItem(k, entries[k]); });
       } catch (e) {
         try {
           Object.keys(localMap()).forEach(function (k) { ls.removeItem(k); });
-          Object.keys(old).forEach(function (k) { rawSet.call(ls, k, old[k]); });
+          Object.keys(old).forEach(function (k) { lset(k, old[k]); });
         } catch (e2) {}
-        closeConfirm(); bMsg('Não foi possível importar (armazenamento cheio). Nada foi alterado.', 'err'); return;
+        bMsg('Não foi possível importar (armazenamento cheio). Nada foi alterado.', 'err'); return;
       }
-      closeConfirm(); bMsg(partial ? 'Importação parcial concluída. Recarregando…' : 'Backup importado. Recarregando…', 'ok');
+      bMsg(partial ? 'Importação parcial concluída. Recarregando…' : 'Backup importado. Recarregando…', 'ok');
       save(); reloading = true;
       setTimeout(function () { location.reload(); }, 700);
     });
 
     /* Gatilhos de sincronizacao */
-    ['pointerdown', 'keydown', 'input', 'touchstart'].forEach(function (ev) {
-      document.addEventListener(ev, function () { lastAct = Date.now(); }, { capture: true, passive: true });
+    ['pointerdown', 'keydown', 'input', 'change', 'touchstart', 'drop', 'paste'].forEach(function (ev) {
+      document.addEventListener(ev, function (e) { if (e.isTrusted !== false) lastAct = Date.now(); }, { capture: true, passive: true });
     });
     document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible') runSync('visible');
+      if (document.visibilityState === 'visible') { checkGen(); runSync('visible'); }
       else if (pendingCount()) runSync('hide');
     });
+    window.addEventListener('focus', checkGen);
+    window.addEventListener('pageshow', function (e) { if (e.persisted) checkGen(); });
     window.addEventListener('online', function () { runSync('online'); });
     setInterval(function () { if (document.visibilityState === 'visible') runSync('poll'); }, 45000);
 
@@ -609,6 +1026,10 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     applyMount();
     render();
     if (S.session) setTimeout(function () { runSync('start'); }, 600);
+    // cópia diária automática (a primeira de cada dia neste aparelho)
+    setTimeout(function () {
+      snapMetas().then(function (m) { if (!m.length || Date.now() - m[0].at > 20 * 3600e3) snapshot('Cópia diária automática'); });
+    }, 2500);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
