@@ -108,6 +108,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     'skilltree-countdown-v1': 'Contagem regressiva (formato antigo)',
     'skilltree-profile-v1': 'Status e dinheiro',
     'skilltree-games-v1': 'Backlog de jogos',
+    'skilltree-media-v1': 'Mídias (estante de DVDs)',
     'skilltree-fin-v1': 'Finanças',
     'skilltree-wishlist-v1': 'Backlog de produtos',
     'skilltree-pc-v1': 'Meu PC',
@@ -6631,14 +6632,15 @@ function fle({ areas: e, trophies: t, texts: a, onToggle: r, onText: n, onNewAre
   });
 }
 // Ordem FIXA das abas (menu, L1/R1 e atalhos Q/E):
-// HUB -> FINANÇAS -> BACKLOG -> PLANEJAMENTO -> MEU PC -> LEITURAS -> TAREFAS -> HÁBITOS (e volta ao HUB)
-var TAB_ORDER = ["hub", "fin", "games", "plan", "pc", "read", "tasks", "habits"],
+// HUB -> FINANÇAS -> BACKLOG -> PLANEJAMENTO -> MEU PC -> MÍDIAS -> LEITURAS -> TAREFAS -> HÁBITOS (e volta ao HUB)
+var TAB_ORDER = ["hub", "fin", "games", "plan", "pc", "media", "read", "tasks", "habits"],
   Sd = [
     { id: "hub", label: "Hub principal", icon: Hf },
     { id: "fin", label: "Finan\xE7as", icon: ei },
     { id: "games", label: "Backlog de jogos", icon: Xo },
     { id: "plan", label: "Planejamento anual", icon: Jl },
     { id: "pc", label: "Meu PC", icon: Yo },
+    { id: "media", label: "M\xEDdias", icon: hf },
     { id: "read", label: "Leituras", icon: $o },
     { id: "tasks", label: "Tarefas", icon: gf },
     { id: "habits", label: "H\xE1bitos", icon: pd },
@@ -6775,6 +6777,7 @@ function ple({ tab: e }) {
           plan: "Terminal // Planejamento",
           tasks: "Terminal // Kanban",
           habits: "Terminal // H\xE1bitos",
+          media: "Terminal // Videoteca",
         }[e],
       }),
       (0, u.jsx)("span", {
@@ -12147,6 +12150,560 @@ function CountdownStack({ items, setItems }) {
   );
 }
 
+// ===== MÍDIAS · estante de DVDs (filmes, séries e animes) =====
+// mediaLibrary = [{ id, name, year, format: "unico"|"episodios", duration (min), cover (data URL base64), status: "assistido"|"assistindo"|"radar" }]
+// Persistido em "skilltree-media-v1" (entra no backup e na sincronização). Números ficam como texto ("" = não informado).
+var MD_KEY = "skilltree-media-v1",
+  MD_FORMATS = [
+    { id: "unico", label: "Volume \xDAnico", short: "Vol. \xFAnico" },
+    { id: "episodios", label: "Em Epis\xF3dios", short: "Epis\xF3dios" },
+  ],
+  // LED de status: assistido = ciano aceso · assistindo = laranja pulsando · no radar = vermelho escuro apagado
+  MD_STATUS = [
+    { id: "assistido", label: "Assistido", led: "#22d3ee", glow: "0 0 6px #22d3ee, 0 0 12px rgba(34,211,238,.7)", pulse: !1 },
+    { id: "assistindo", label: "Assistindo", led: "#fb923c", glow: "0 0 6px #fb923c, 0 0 12px rgba(251,146,60,.75)", pulse: !0 },
+    { id: "radar", label: "No Radar", led: "#7f1d1d", glow: "none", pulse: !1 },
+  ],
+  MD_SORTS = [
+    { id: "shelf", label: "Ordem da estante" },
+    { id: "name", label: "Nome (A–Z)" },
+    { id: "year", label: "Ano (mais novo)" },
+    { id: "status", label: "Status" },
+  ],
+  mdStatus = (id) => MD_STATUS.find((s) => s.id === id) || MD_STATUS[2],
+  mdFormat = (id) => MD_FORMATS.find((f) => f.id === id) || MD_FORMATS[0],
+  MD_ACCENTS = ["#22d3ee", "#e879f9", "#facc15", "#a3e635", "#fb923c", "#f43f5e", "#60a5fa", "#34d399"],
+  mdAccent = (s) => {
+    let h = 7;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return MD_ACCENTS[Math.abs(h) % MD_ACCENTS.length];
+  },
+  // capa: só data URL base64 de imagem (seguro dentro de url("..."))
+  mdCoverOk = (s) => /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(String(s || "")),
+  mdInt = (v, lo, hi) => {
+    if (v === "" || v === null || v === void 0) return "";
+    let n = Math.floor(Number(v));
+    return Number.isFinite(n) && n >= lo && n <= hi ? String(n) : "";
+  },
+  mdNew = (x) => ({ id: Qe(), name: "", year: "", format: "unico", duration: "", cover: "", status: "radar", ...(x || {}) }),
+  // 135 -> "2h 15min" · 45 -> "45 min"
+  mdDur = (min) => {
+    let n = Number(min);
+    if (!(n > 0)) return "";
+    let h = Math.floor(n / 60),
+      m = n % 60;
+    return h ? `${h}h${m ? ` ${String(m).padStart(2, "0")}min` : ""}` : `${m} min`;
+  },
+  mdDetails = (m) =>
+    [m.year, Number(m.duration) > 0 ? (m.format === "episodios" ? `~${mdDur(m.duration)}/ep` : mdDur(m.duration)) : "", mdFormat(m.format).short]
+      .filter(Boolean)
+      .join(" \xB7 ");
+function mdLoad() {
+  try {
+    let raw = localStorage.getItem(MD_KEY),
+      arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    let ids = new Set();
+    return arr
+      .filter((m) => m && typeof m == "object")
+      .slice(0, 3e3)
+      .map((m) => {
+        let id = ge(m.id, 20);
+        (!id || ids.has(id)) && (id = Qe());
+        ids.add(id);
+        return {
+          id,
+          name: ge(m.name, 120),
+          year: mdInt(m.year, 1870, 2200),
+          format: m.format === "episodios" ? "episodios" : "unico",
+          duration: mdInt(m.duration, 0, 1e5),
+          cover: mdCoverOk(m.cover) ? Ad(m.cover) : "",
+          status: MD_STATUS.some((s) => s.id === m.status) ? m.status : "radar",
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+// ---- caixa de DVD (capa na frente, dobradiça na lombada, reflexo do plástico e LED de status na base) ----
+function DvdCase({ m, w, h, onOpen, preview }) {
+  let st = mdStatus(m.status),
+    name = (m.name || "").trim() || "Sem t\xEDtulo",
+    acc = mdAccent(name),
+    cover = mdCoverOk(m.cover) ? m.cover : "",
+    len = name.length,
+    fs = Math.round((len <= 10 ? 15 : len <= 20 ? 13 : len <= 34 ? 11 : 10) * Math.min(1, w / 128) * 10) / 10,
+    det = mdDetails(m),
+    tag = preview ? "div" : "button";
+  return HX(
+    tag,
+    {
+      ...(preview
+        ? { "aria-hidden": "true" }
+        : {
+            type: "button",
+            onClick: () => onOpen(m.id),
+            title: `${name}${det ? ` \xB7 ${det}` : ""} \xB7 ${st.label}`,
+            "aria-label": `${name}, ${st.label}${det ? `, ${det}` : ""}. Abrir para editar`,
+            "data-media": m.id,
+          }),
+      "data-media-cover": cover ? "1" : "0",
+      className: `group/dvd relative shrink-0 overflow-hidden rounded-[3px] border border-zinc-700/90 bg-zinc-950 text-left shadow-[2px_4px_10px_rgba(0,0,0,.6)] transition-all duration-200 ease-out ${
+        preview
+          ? ""
+          : "cursor-pointer hover:z-10 hover:-translate-y-3 hover:border-cyan-300 hover:shadow-[0_0_14px_2px_rgba(34,211,238,.55),0_12px_20px_rgba(0,0,0,.7)] focus-visible:z-10 focus-visible:-translate-y-3 focus-visible:border-cyan-300 focus-visible:shadow-[0_0_14px_2px_rgba(34,211,238,.55)] focus-visible:outline-none motion-reduce:hover:translate-y-0"
+      }`,
+      style: { width: w, height: h },
+    },
+    // frente: imagem enviada ou capa genérica com o NOME na vertical
+    cover
+      ? HX("span", { className: "absolute inset-0 bg-cover bg-center", style: { backgroundImage: `url("${cover}")` } })
+      : HX(
+          "span",
+          {
+            className: "absolute inset-0 flex flex-col items-center justify-between overflow-hidden pb-3 pl-2 pr-1 pt-2",
+            style: { background: `linear-gradient(165deg,#0b0f16 0%,#12080b 58%,${acc}30 100%)` },
+          },
+          HX("span", { className: "font-orbit text-[9px] leading-none tracking-[0.2em]", style: { color: `${acc}cc` } }, m.year || "\xA0"),
+          HX(
+            "span",
+            { className: "flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden py-1" },
+            HX(
+              "span",
+              {
+                className: "max-h-full rotate-180 overflow-hidden break-words text-center font-bold uppercase leading-tight tracking-[0.1em] [writing-mode:vertical-rl]",
+                style: { color: acc, fontSize: fs, textShadow: `0 0 8px ${acc}99` },
+                "data-media-vtitle": !0,
+              },
+              name,
+            ),
+          ),
+          HX(
+            "span",
+            { className: `flex items-center gap-1 whitespace-nowrap text-[8px] font-semibold uppercase leading-none text-zinc-500 ${w < 110 ? "tracking-[0.06em]" : "tracking-[0.18em]"}` },
+            w >= 110 && HX(Cf, { size: 10, className: "shrink-0" }),
+            mdFormat(m.format).short,
+          ),
+        ),
+    // lombada/dobradiça do estojo + faixa de cor da obra
+    HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 left-0 w-[6px] bg-gradient-to-r from-black/75 to-black/10" }),
+    HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 left-[6px] w-px", style: { background: cover ? "rgba(255,255,255,.18)" : acc, boxShadow: cover ? "none" : `0 0 6px ${acc}` } }),
+    // reflexo do plástico
+    HX("span", {
+      "aria-hidden": "true",
+      className: "pointer-events-none absolute inset-0",
+      style: { background: "linear-gradient(115deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,.03) 32%,rgba(255,255,255,0) 45%)" },
+    }),
+    // ficha que sobe no hover/foco
+    !preview &&
+      HX(
+        "span",
+        {
+          className:
+            "pointer-events-none absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black via-black/90 to-transparent px-2 pb-3 pt-7 transition-transform duration-200 group-hover/dvd:translate-y-0 group-focus-visible/dvd:translate-y-0",
+        },
+        HX("span", { className: "block text-[11px] font-bold uppercase leading-tight tracking-wide text-zinc-100 [overflow-wrap:anywhere] line-clamp-3" }, name),
+        det && HX("span", { className: "mt-0.5 block text-[10px] leading-tight text-zinc-400" }, det),
+        HX("span", { className: "mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.18em]", style: { color: st.id === "radar" ? "#f87171" : st.led } }, st.label),
+      ),
+    // LED de status na base do DVD
+    HX("span", {
+      "aria-hidden": "true",
+      className: `pointer-events-none absolute inset-x-[7px] bottom-0 z-20 h-[2px] rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+      style: { background: st.led, opacity: st.id === "radar" ? 0.55 : 0.9, boxShadow: st.glow },
+    }),
+    HX("span", {
+      "aria-hidden": "true",
+      "data-media-led": st.id,
+      className: `pointer-events-none absolute bottom-[5px] right-[5px] z-20 h-[7px] w-[7px] rounded-full ring-1 ring-black/80 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+      style: { background: st.led, boxShadow: st.glow },
+    }),
+  );
+}
+// ---- espaço vazio "+ cadastrar" no fim da estante ----
+function DvdAddSlot({ w, h, onAdd }) {
+  return HX(
+    "button",
+    {
+      type: "button",
+      onClick: onAdd,
+      "data-media-add": !0,
+      "aria-label": "Cadastrar m\xEDdia",
+      className:
+        "group/add flex shrink-0 flex-col items-center justify-center gap-2 rounded-[3px] border-2 border-dashed border-zinc-700 text-zinc-500 transition-all duration-200 hover:-translate-y-3 hover:border-cyan-400 hover:text-cyan-300 hover:shadow-[0_0_14px_rgba(34,211,238,.35)] focus-visible:-translate-y-3 focus-visible:border-cyan-400 focus-visible:text-cyan-300 focus-visible:outline-none motion-reduce:hover:translate-y-0",
+      style: { width: w, height: h },
+    },
+    HX(gt, { size: 22, strokeWidth: 2.5 }),
+    HX("span", { className: "px-2 text-center text-[10px] font-semibold uppercase leading-tight tracking-[0.18em]" }, "Cadastrar m\xEDdia"),
+  );
+}
+// ---- a estante: prateleiras de metal com vidro fumê; as capas quebram de linha conforme a largura ----
+function MediaShelf({ items, onOpen, onAdd, showAdd }) {
+  let ref = (0, K.useRef)(null),
+    [cw, setCw] = (0, K.useState)(0);
+  (0, K.useLayoutEffect)(() => {
+    let el = ref.current;
+    if (!el) return;
+    let upd = () => setCw(el.clientWidth);
+    upd();
+    let ro = typeof ResizeObserver != "undefined" ? new ResizeObserver(upd) : null;
+    return (
+      ro ? ro.observe(el) : window.addEventListener("resize", upd),
+      () => {
+        ro ? ro.disconnect() : window.removeEventListener("resize", upd);
+      }
+    );
+  }, []);
+  let small = cw > 0 && cw < 440,
+    mid = cw >= 440 && cw < 780,
+    size = small ? { w: 92, h: 138 } : mid ? { w: 108, h: 162 } : { w: 128, h: 192 }, // proporção de capa de DVD (2:3)
+    gap = small ? 10 : 14,
+    padX = small ? 10 : 18,
+    cols = Math.max(1, Math.floor((Math.max(0, cw - padX * 2) + gap) / (size.w + gap))),
+    list = showAdd ? [...items, { id: "__add", add: !0 }] : items,
+    // colunas verticais de metal dividindo a estante em módulos (como estantes de DVD reais)
+    unit = small ? 0 : mid ? 4 : 5,
+    posts = [],
+    rows = [];
+  if (unit && cols > unit) for (let k = unit; k < cols; k += unit) posts.push(padX + k * (size.w + gap) - gap / 2);
+  for (let i = 0; i < list.length; i += cols) rows.push(list.slice(i, i + cols));
+  for (; rows.length < 3; ) rows.push([]); // a estante sempre tem pelo menos 3 prateleiras
+  return HX(
+    "div",
+    {
+      className:
+        "relative overflow-hidden rounded-[4px] border border-zinc-700/80 bg-gradient-to-b from-[#0d0f16]/90 via-[#0a0b10]/90 to-[#07080c]/95 shadow-[inset_0_0_60px_rgba(0,0,0,.85),0_0_30px_rgba(34,211,238,.08)] backdrop-blur-md",
+      "data-media-shelf": !0,
+      "data-cols": cols,
+    },
+    // moldura de metal escuro com filete neon no topo e colunas laterais
+    HX("div", { "aria-hidden": "true", className: "h-2 border-b border-zinc-700/80 bg-gradient-to-b from-zinc-700/60 to-zinc-900", style: { boxShadow: "0 1px 0 rgba(34,211,238,.35)" } }),
+    HX("div", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-r from-zinc-800 to-zinc-900 shadow-[1px_0_0_rgba(255,255,255,.04)]" }),
+    HX("div", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 right-0 w-1.5 bg-gradient-to-l from-zinc-800 to-zinc-900 shadow-[-1px_0_0_rgba(255,255,255,.04)]" }),
+    HX(
+      "div",
+      {
+        ref,
+        className: "relative px-1.5 pb-2",
+        // fundo de metal escovado atrás do vidro fumê
+        style: {
+          backgroundImage:
+            "repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0 1px,transparent 1px 4px),linear-gradient(115deg,rgba(255,255,255,.035) 0%,rgba(255,255,255,0) 30%),radial-gradient(ellipse 70% 60% at 50% 35%,rgba(34,211,238,.05),transparent 70%)",
+        },
+      },
+      ...posts.map((x, i) =>
+        HX("span", {
+          key: `post${i}`,
+          "aria-hidden": "true",
+          "data-media-post": !0,
+          className: "pointer-events-none absolute top-0 w-1.5 -translate-x-1/2 border-x border-zinc-900 bg-gradient-to-r from-zinc-800 via-zinc-700 to-zinc-800 shadow-[0_0_8px_rgba(0,0,0,.8)]",
+          style: { left: x + 6, bottom: 22 }, // termina na última prateleira
+        }),
+      ),
+      cw > 0 &&
+        rows.map((row, ri) =>
+          HX(
+            "div",
+            {
+              key: ri,
+              "data-media-row": ri,
+              className: "relative flex items-end border-b-4 border-zinc-800 shadow-[0_4px_10px_rgba(0,0,0,0.5)]",
+              style: { gap, paddingLeft: padX, paddingRight: padX, paddingTop: 20, minHeight: size.h + 20, marginBottom: 14 },
+            },
+            ...row.map((m) =>
+              m.add ? HX(DvdAddSlot, { key: m.id, w: size.w, h: size.h, onAdd }) : HX(DvdCase, { key: m.id, m, w: size.w, h: size.h, onOpen }),
+            ),
+            // quina da prateleira + fita de LED por baixo
+            HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-x-0 -bottom-1 h-px bg-zinc-600/50" }),
+            HX("span", {
+              "aria-hidden": "true",
+              className: "pointer-events-none absolute inset-x-6 -bottom-[7px] h-px",
+              style: { background: "linear-gradient(90deg,transparent,rgba(34,211,238,.55),rgba(232,121,249,.45),transparent)", boxShadow: "0 0 8px rgba(34,211,238,.35)" },
+            }),
+          ),
+        ),
+    ),
+  );
+}
+// ---- modal de cadastro / edição ----
+function MediaModal({ item, onSave, onDelete, onClose }) {
+  let edit = !!item,
+    [f, setF] = (0, K.useState)(() => ({ ...mdNew(), ...(item || {}) })),
+    [err, setErr] = (0, K.useState)(""),
+    [delAsk, setDelAsk] = (0, K.useState)(!1),
+    set = (k, v) => (setF((o) => ({ ...o, [k]: v })), setErr("")),
+    durLabel = f.format === "episodios" ? "Dura\xE7\xE3o M\xE9dia por Epis\xF3dio (Minutos)" : "Dura\xE7\xE3o Total (Minutos)",
+    save = () => {
+      let name = f.name.trim();
+      if (!name) return setErr("D\xEA um nome \xE0 m\xEDdia.");
+      let year = mdInt(f.year, 1870, 2200),
+        dur = mdInt(f.duration, 0, 1e5);
+      if (String(f.year).trim() && !year) return setErr("Ano inv\xE1lido (use 4 d\xEDgitos, ex.: 2019).");
+      if (String(f.duration).trim() && !dur) return setErr("Dura\xE7\xE3o inv\xE1lida (minutos inteiros).");
+      (onSave({ name: name.slice(0, 120), year, format: f.format, duration: dur, cover: f.cover, status: f.status }), onClose());
+    },
+    lbl = HLBL,
+    sel = `${HIN} cursor-pointer [&>option]:bg-zinc-950 [&>option]:text-cyan-100`;
+  (0, K.useEffect)(() => {
+    let k = (ev) => {
+      ev.key === "Escape" && onClose();
+    };
+    return (window.addEventListener("keydown", k), () => window.removeEventListener("keydown", k));
+  }, [onClose]);
+  return HX(
+    "div",
+    {
+      className: "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": edit ? "Editar m\xEDdia" : "Cadastrar m\xEDdia",
+      "data-media-modal": !0,
+    },
+    HX("button", { type: "button", className: "fade-in absolute inset-0 cursor-default bg-black/75 backdrop-blur-[3px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX(
+      "div",
+      { className: "pop-in relative max-h-full w-full max-w-2xl overflow-y-auto" },
+      HX("div", { className: "absolute inset-0 bg-cyan-400/80", style: { clipPath: it } }),
+      HX("div", { className: "absolute bg-[#0b0d14]/95", style: { inset: 1.5, clipPath: it } }),
+      HX(
+        "div",
+        { className: "relative p-5" },
+        HX(
+          "div",
+          { className: "flex items-start justify-between gap-3 border-b border-cyan-900/60 pb-3" },
+          HX(
+            "div",
+            {},
+            HX("div", { className: "text-[9px] tracking-[0.35em] text-cyan-500/80" }, "M\xCDDIAS//ESTANTE"),
+            HX("h2", { className: "text-xl font-bold uppercase tracking-[0.12em] text-yellow-400" }, edit ? "Editar m\xEDdia" : "Cadastrar m\xEDdia"),
+          ),
+          HX(
+            "button",
+            { type: "button", onClick: onClose, "aria-label": "Fechar", className: "p-1.5 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" },
+            HX(Da, { size: 20 }),
+          ),
+        ),
+        HX(
+          "div",
+          { className: "mt-4 flex flex-col gap-5 sm:flex-row" },
+          // prévia ao vivo do DVD
+          HX(
+            "div",
+            { className: "flex shrink-0 flex-col items-center gap-2 sm:w-[150px]", "data-media-preview": !0 },
+            HX(
+              "div",
+              { className: "flex items-end justify-center border-b-4 border-zinc-800 px-3 pt-3 shadow-[0_4px_10px_rgba(0,0,0,0.5)]" },
+              HX(DvdCase, { m: f, w: 128, h: 192, preview: !0 }),
+            ),
+            HX("span", { className: "text-[9px] uppercase tracking-[0.25em] text-zinc-500" }, "Pr\xE9-visualiza\xE7\xE3o"),
+          ),
+          HX(
+            "div",
+            { className: "grid min-w-0 flex-1 grid-cols-2 gap-x-3 gap-y-3" },
+            HX(
+              "label",
+              { className: "col-span-2 block" },
+              HX("span", { className: lbl }, "Nome"),
+              HX("input", {
+                autoFocus: !0,
+                type: "text",
+                "aria-label": "Nome",
+                value: f.name,
+                maxLength: 120,
+                placeholder: "Ex.: Blade Runner 2049",
+                onChange: (ev) => set("name", ev.target.value),
+                onKeyDown: (ev) => {
+                  ev.key === "Enter" && save();
+                },
+                className: HIN,
+              }),
+            ),
+            HX(
+              "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Ano"),
+              HX("input", {
+                type: "number",
+                inputMode: "numeric",
+                "aria-label": "Ano",
+                min: 1870,
+                max: 2200,
+                step: 1,
+                value: f.year,
+                placeholder: "2019",
+                onChange: (ev) => set("year", ev.target.value.slice(0, 4)),
+                className: `${HIN} font-orbit`,
+              }),
+            ),
+            HX(
+              "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Tipo / Formato"),
+              HX(
+                "select",
+                { "aria-label": "Tipo / Formato", value: f.format, onChange: (ev) => set("format", ev.target.value), className: sel },
+                ...MD_FORMATS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+              ),
+            ),
+            HX(
+              "label",
+              { className: "col-span-2 block" },
+              HX("span", { className: lbl, "data-media-dur-label": !0 }, durLabel),
+              HX("input", {
+                type: "number",
+                inputMode: "numeric",
+                "aria-label": durLabel,
+                min: 0,
+                step: 1,
+                value: f.duration,
+                placeholder: f.format === "episodios" ? "24" : "120",
+                onChange: (ev) => set("duration", ev.target.value.slice(0, 6)),
+                className: `${HIN} font-orbit`,
+              }),
+            ),
+            HX(
+              "div",
+              { className: "col-span-2" },
+              HX("span", { className: lbl }, "Imagem de capa"),
+              HX(Od, { variant: "full", value: f.cover, onChange: (v) => set("cover", v), label: "Imagem de capa", maxDim: 300, quality: 0.75 }),
+            ),
+            HX(
+              "label",
+              { className: "col-span-2 block" },
+              HX("span", { className: lbl }, "Status"),
+              HX(
+                "select",
+                { "aria-label": "Status", value: f.status, onChange: (ev) => set("status", ev.target.value), className: sel },
+                ...MD_STATUS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+              ),
+            ),
+          ),
+        ),
+        err && HX("p", { className: "mt-3 text-[12px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+        HX(
+          "div",
+          { className: "mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4" },
+          edit && onDelete
+            ? delAsk
+              ? HX(HBtn, { tone: "danger", onClick: () => (onDelete(), onClose()), label: "Confirmar exclus\xE3o da m\xEDdia" }, HX(yt, { size: 13 }), "Excluir de vez")
+              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir m\xEDdia" }, HX(yt, { size: 13 }), "Excluir")
+            : HX("span", {}),
+          HX(ye, { variant: "primary", onClick: save }, HX(edit ? ls : gt, { size: 15, strokeWidth: 2.5 }), edit ? "Salvar" : "Cadastrar"),
+        ),
+      ),
+    ),
+  );
+}
+// ---- filtro de status (chip com o LED) ----
+function MdChip({ on, onClick, led, pulse, children, label }) {
+  return HX(
+    "button",
+    {
+      type: "button",
+      onClick,
+      "aria-pressed": on,
+      "aria-label": label,
+      className: `flex items-center gap-2 border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 ${
+        on ? "border-cyan-400 bg-cyan-400/15 text-cyan-200" : "border-zinc-700 bg-zinc-950/80 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+      }`,
+    },
+    led && HX("span", { className: `h-2 w-2 shrink-0 rounded-full ${pulse ? "animate-pulse motion-reduce:animate-none" : ""}`, style: { background: led, boxShadow: led === "#7f1d1d" ? "none" : `0 0 6px ${led}` } }),
+    children,
+  );
+}
+// ---- página da aba MÍDIAS ----
+function MediaPage({ items, setItems }) {
+  let [modal, setModal] = (0, K.useState)(null),
+    [filter, setFilter] = (0, K.useState)("all"),
+    [q, setQ] = (0, K.useState)(""),
+    [sort, setSort] = (0, K.useState)("shelf"),
+    counts = MD_STATUS.reduce((o, s) => ((o[s.id] = items.filter((m) => m.status === s.id).length), o), {}),
+    term = q.trim().toLowerCase(),
+    stOrder = { assistindo: 0, radar: 1, assistido: 2 },
+    shown = items
+      .filter((m) => (filter === "all" || m.status === filter) && (!term || `${m.name} ${m.year}`.toLowerCase().includes(term)))
+      .map((m, i) => ({ m, i })),
+    editing = modal && modal.id ? items.find((m) => m.id === modal.id) : null;
+  sort === "name"
+    ? shown.sort((a, b) => a.m.name.localeCompare(b.m.name, "pt-BR", { sensitivity: "base" }))
+    : sort === "year"
+      ? shown.sort((a, b) => (Number(b.m.year) || 0) - (Number(a.m.year) || 0) || a.i - b.i)
+      : sort === "status" && shown.sort((a, b) => stOrder[a.m.status] - stOrder[b.m.status] || a.i - b.i);
+  let list = shown.map((x) => x.m),
+    open = (id) => setModal({ id }),
+    add = () => setModal({ id: null });
+  return HX(
+    "div",
+    { className: "min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-8", "data-media-page": !0 },
+    HX(Pd, {
+      icon: hf,
+      title: "M\xEDdias",
+      sub: `Filmes, s\xE9ries e animes \xB7 ${items.length} t\xEDtulo${items.length === 1 ? "" : "s"} na estante`,
+      right: HX(ye, { variant: "primary", onClick: add }, HX(gt, { size: 15, strokeWidth: 3 }), "Cadastrar m\xEDdia"),
+    }),
+    // HUD: filtros por status (com LED), busca e ordenação
+    HX(
+      "div",
+      { className: "mb-4 flex flex-wrap items-center gap-2" },
+      HX(MdChip, { on: filter === "all", onClick: () => setFilter("all"), label: "Mostrar todas" }, `Todas \xB7 ${items.length}`),
+      ...MD_STATUS.map((s) =>
+        HX(
+          MdChip,
+          { key: s.id, on: filter === s.id, onClick: () => setFilter(filter === s.id ? "all" : s.id), led: s.led, pulse: s.pulse, label: `Filtrar: ${s.label}` },
+          `${s.label} \xB7 ${counts[s.id]}`,
+        ),
+      ),
+      HX(
+        "div",
+        { className: "ml-auto flex w-full min-w-0 items-center gap-2 sm:w-auto" },
+        HX(
+          "label",
+          { className: "relative min-w-0 flex-1 sm:w-56 sm:flex-none" },
+          HX(ss, { size: 14, className: "pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" }),
+          HX("input", {
+            type: "search",
+            "aria-label": "Buscar m\xEDdia",
+            value: q,
+            placeholder: "Buscar t\xEDtulo ou ano…",
+            onChange: (ev) => setQ(ev.target.value),
+            className: `${HIN} pl-8`,
+          }),
+        ),
+        HX(
+          "select",
+          {
+            "aria-label": "Ordenar estante",
+            value: sort,
+            onChange: (ev) => setSort(ev.target.value),
+            className: "shrink-0 cursor-pointer border border-red-900/80 bg-[#0a0507] px-2 py-1.5 text-[13px] text-cyan-100 [color-scheme:dark] focus:border-cyan-400 focus:outline-none [&>option]:bg-zinc-950",
+          },
+          ...MD_SORTS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+        ),
+      ),
+    ),
+    items.length === 0 &&
+      HX(
+        "p",
+        { className: "mb-3 text-center text-[13px] uppercase tracking-[0.2em] text-cyan-200/70" },
+        "Estante vazia \xB7 cadastre o primeiro filme, s\xE9rie ou anime",
+      ),
+    items.length > 0 &&
+      list.length === 0 &&
+      HX("p", { className: "mb-3 text-center text-[13px] uppercase tracking-[0.2em] text-zinc-500" }, "Nenhuma m\xEDdia com esse filtro"),
+    HX(MediaShelf, { items: list, onOpen: open, onAdd: add, showAdd: filter === "all" && !term }),
+    modal &&
+      kbPortal(
+        HX(MediaModal, {
+          key: modal.id || "new",
+          item: editing,
+          onClose: () => setModal(null),
+          onSave: (v) => (editing ? setItems((xs) => xs.map((x) => (x.id === editing.id ? { ...x, ...v } : x))) : setItems((xs) => [...xs, mdNew(v)])),
+          onDelete: editing ? () => setItems((xs) => xs.filter((x) => x.id !== editing.id)) : void 0,
+        }),
+      ),
+  );
+}
+
 // Ponto de montagem do bot\xE3o de Sincroniza\xE7\xE3o/Backup (o motor fica no script do <head>).
 // Ao desmontar (sair do hub), o bot\xE3o e o painel somem: n\xE3o ficam mais flutuando nas outras abas.
 function StbkSlot() {
@@ -12195,6 +12752,8 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     [hbDay, setHbDay] = (0, K.useState)(hbToday),
     // Contagens regressivas do HUB: [{ id, name, date, icon }] (até CD_MAX)
     [countdowns, setCountdowns] = (0, K.useState)(cdLoadAll),
+    // Mídias: estante de DVDs [{ id, name, year, format, duration, cover, status }]
+    [mediaLibrary, setMediaLibrary] = (0, K.useState)(mdLoad),
     dayRef = (0, K.useRef)(""),
     navRef = (0, K.useRef)(null),
     [U, Ie] = (0, K.useState)(Lie),
@@ -12296,6 +12855,12 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
       } catch {}
       ti(CD2_KEY, countdowns) || b(!0);
     }, [countdowns]),
+    (0, K.useEffect)(() => {
+      try {
+        if (!mediaLibrary.length && localStorage.getItem(MD_KEY) === null) return;
+      } catch {}
+      ti(MD_KEY, mediaLibrary) || b(!0);
+    }, [mediaLibrary]),
     // Virada do dia (meia-noite, volta de suspensão, aba reaberta): recalcula as ofensivas sem recarregar a página
     (0, K.useEffect)(() => {
       dayRef.current = hbDay;
@@ -12950,6 +13515,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
                 setActive: setKanbanActive,
               }),
             n === "habits" && (0, u.jsx)(HabitsPage, { habits, setHabits, today: hbDay }),
+            n === "media" && (0, u.jsx)(MediaPage, { items: mediaLibrary, setItems: setMediaLibrary }),
           ],
         },
         Ir ? i : n,
