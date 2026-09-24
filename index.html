@@ -12150,28 +12150,40 @@ function CountdownStack({ items, setItems }) {
   );
 }
 
-// ===== MÍDIAS · estante de DVDs (filmes, séries e animes) =====
-// mediaLibrary = [{ id, name, year, format: "unico"|"episodios", duration (min), cover (data URL base64), status: "assistido"|"assistindo"|"radar" }]
-// Persistido em "skilltree-media-v1" (entra no backup e na sincronização). Números ficam como texto ("" = não informado).
+// ===== MÍDIAS · estante de filmes, séries e animes (caixas estilo Blu-ray) =====
+// mediaLibrary = [{ id, name, year, format: "unico"|"episodios", duration (min), cover (data URL base64),
+//                   status: "assistido"|"assistindo"|"radar", genreType, rating (0–10), review, episodesCount, seasonsCount }]
+// Persistido em "skilltree-media-v1" (entra no backup e na sincronização). Números de formulário ficam como texto ("" = não informado).
 var MD_KEY = "skilltree-media-v1",
   MD_FORMATS = [
     { id: "unico", label: "Volume \xDAnico", short: "Vol. \xFAnico" },
     { id: "episodios", label: "Em Epis\xF3dios", short: "Epis\xF3dios" },
   ],
-  // LED de status: assistido = ciano aceso · assistindo = laranja pulsando · no radar = vermelho escuro apagado
+  MD_TYPES = [
+    { id: "anime", label: "Anime" },
+    { id: "serie", label: "S\xE9rie" },
+    { id: "filme", label: "Filme" },
+    { id: "animacao", label: "Anima\xE7\xE3o" },
+    { id: "seriado", label: "Seriado" },
+    { id: "documentario", label: "Document\xE1rio" },
+    { id: "outro", label: "Outro" },
+  ],
+  // LED de status: assistido = ciano aceso · assistindo = amarelo pulsando · no radar = cinza apagado
   MD_STATUS = [
-    { id: "assistido", label: "Assistido", led: "#22d3ee", glow: "0 0 6px #22d3ee, 0 0 12px rgba(34,211,238,.7)", pulse: !1 },
-    { id: "assistindo", label: "Assistindo", led: "#fb923c", glow: "0 0 6px #fb923c, 0 0 12px rgba(251,146,60,.75)", pulse: !0 },
-    { id: "radar", label: "No Radar", led: "#7f1d1d", glow: "none", pulse: !1 },
+    { id: "assistido", label: "Assistido", led: "#22d3ee", glow: "0 0 6px #22d3ee, 0 0 12px rgba(34,211,238,.7)", pulse: !1, text: "#22d3ee" },
+    { id: "assistindo", label: "Assistindo", led: "#facc15", glow: "0 0 6px #facc15, 0 0 12px rgba(250,204,21,.75)", pulse: !0, text: "#facc15" },
+    { id: "radar", label: "No Radar", led: "#52525b", glow: "none", pulse: !1, text: "#a1a1aa" },
   ],
   MD_SORTS = [
     { id: "shelf", label: "Ordem da estante" },
     { id: "name", label: "Nome (A–Z)" },
     { id: "year", label: "Ano (mais novo)" },
+    { id: "rating", label: "Nota (maior)" },
     { id: "status", label: "Status" },
   ],
   mdStatus = (id) => MD_STATUS.find((s) => s.id === id) || MD_STATUS[2],
   mdFormat = (id) => MD_FORMATS.find((f) => f.id === id) || MD_FORMATS[0],
+  mdType = (id) => MD_TYPES.find((t) => t.id === id) || null,
   MD_ACCENTS = ["#22d3ee", "#e879f9", "#facc15", "#a3e635", "#fb923c", "#f43f5e", "#60a5fa", "#34d399"],
   mdAccent = (s) => {
     let h = 7;
@@ -12185,7 +12197,26 @@ var MD_KEY = "skilltree-media-v1",
     let n = Math.floor(Number(v));
     return Number.isFinite(n) && n >= lo && n <= hi ? String(n) : "";
   },
-  mdNew = (x) => ({ id: Qe(), name: "", year: "", format: "unico", duration: "", cover: "", status: "radar", ...(x || {}) }),
+  // nota inteira de 0 a 10 (0 = sem nota); mídias antigas sem o campo caem em 0
+  mdRating = (v) => {
+    let n = Math.round(Number(v) || 0);
+    return n >= 0 && n <= 10 ? n : 0;
+  },
+  mdNew = (x) => ({
+    id: Qe(),
+    name: "",
+    year: "",
+    format: "unico",
+    duration: "",
+    cover: "",
+    status: "radar",
+    genreType: "",
+    rating: 0,
+    review: "",
+    episodesCount: "",
+    seasonsCount: "",
+    ...(x || {}),
+  }),
   // 135 -> "2h 15min" · 45 -> "45 min"
   mdDur = (min) => {
     let n = Number(min);
@@ -12194,10 +12225,36 @@ var MD_KEY = "skilltree-media-v1",
       m = n % 60;
     return h ? `${h}h${m ? ` ${String(m).padStart(2, "0")}min` : ""}` : `${m} min`;
   },
-  mdDetails = (m) =>
-    [m.year, Number(m.duration) > 0 ? (m.format === "episodios" ? `~${mdDur(m.duration)}/ep` : mdDur(m.duration)) : "", mdFormat(m.format).short]
-      .filter(Boolean)
-      .join(" \xB7 ");
+  // "2 temp. · 26 ep. · ~24 min/ep" ou "2h 44min"
+  mdDetails = (m) => {
+    if (m.format !== "episodios") return mdDur(m.duration) || mdFormat(m.format).short;
+    let s = Number(m.seasonsCount) || 0,
+      e = Number(m.episodesCount) || 0,
+      d = Number(m.duration) || 0;
+    return [s ? `${s} temp.` : "", e ? `${e} ep.` : "", d ? `~${mdDur(d)}/ep` : ""].filter(Boolean).join(" \xB7 ") || "Em epis\xF3dios";
+  },
+  // horas com no máximo 1 casa decimal, no padrão brasileiro: 150h · 150,5h
+  mdHours = (h) => `${(Math.round(h * 10) / 10).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}h`;
+// Estatísticas: só entram obras com status "Assistido".
+// Episódios: volume único conta 1; em episódios conta a quantidade informada.
+// Minutos: volume único soma a duração total; em episódios soma média por episódio × quantidade.
+function mdStats(items) {
+  let watched = 0,
+    eps = 0,
+    min = 0,
+    missing = 0;
+  for (let m of items || []) {
+    if (!m || m.status !== "assistido") continue;
+    watched++;
+    let d = Number(m.duration) || 0;
+    if (m.format === "episodios") {
+      let n = Number(m.episodesCount) || 0;
+      n || missing++;
+      ((eps += n), (min += d * n));
+    } else ((eps += 1), (min += d));
+  }
+  return { watched, eps, hours: min / 60, missing };
+}
 function mdLoad() {
   try {
     let raw = localStorage.getItem(MD_KEY),
@@ -12219,21 +12276,35 @@ function mdLoad() {
           duration: mdInt(m.duration, 0, 1e5),
           cover: mdCoverOk(m.cover) ? Ad(m.cover) : "",
           status: MD_STATUS.some((s) => s.id === m.status) ? m.status : "radar",
+          // campos novos: mídias antigas não têm -> valores vazios (nada quebra)
+          genreType: mdType(m.genreType) ? m.genreType : "",
+          rating: mdRating(m.rating),
+          review: ge(m.review, 4e3),
+          episodesCount: mdInt(m.episodesCount, 0, 1e5),
+          seasonsCount: mdInt(m.seasonsCount, 0, 1e3),
         };
       });
   } catch {
     return [];
   }
 }
-// ---- caixa de DVD (capa na frente, dobradiça na lombada, reflexo do plástico e LED de status na base) ----
-function DvdCase({ m, w, h, onOpen, preview }) {
+// ---- caixa estilo Blu-ray: plástico azul translúcido, cantos arredondados, faixa de vidro no topo e LED na base ----
+function MediaCase({ m, w, h, onOpen, preview }) {
   let st = mdStatus(m.status),
-    name = (m.name || "").trim() || "Sem t\xEDtulo",
+    name = String(m.name || "").trim() || "Sem t\xEDtulo",
     acc = mdAccent(name),
     cover = mdCoverOk(m.cover) ? m.cover : "",
+    type = mdType(m.genreType),
+    band = Math.max(11, Math.round(h * 0.075)), // altura da faixa de vidro
+    pad = w < 110 ? 2.5 : 3, // espessura do plástico em volta da capa
+    padB = pad + 2.5, // base da moldura um pouco mais grossa: é o trilho do LED
+    rating = mdRating(m.rating),
     len = name.length,
-    fs = Math.round((len <= 10 ? 15 : len <= 20 ? 13 : len <= 34 ? 11 : 10) * Math.min(1, w / 128) * 10) / 10,
+    avail = h - pad - padB - band - 46, // altura útil da coluna do título (desconta faixa, ano, formato e respiros)
+    longest = Math.max(1, ...name.split(/\s+/).map((x) => x.length)),
+    fs = Math.round(Math.max(7, Math.min((len <= 10 ? 15 : len <= 20 ? 13 : len <= 34 ? 11 : 10) * Math.min(1, w / 128), avail / (longest * 0.8))) * 10) / 10,
     det = mdDetails(m),
+    meta = [type ? type.label : "", m.year].filter(Boolean).join(" \xB7 "),
     tag = preview ? "div" : "button";
   return HX(
     tag,
@@ -12243,80 +12314,120 @@ function DvdCase({ m, w, h, onOpen, preview }) {
         : {
             type: "button",
             onClick: () => onOpen(m.id),
-            title: `${name}${det ? ` \xB7 ${det}` : ""} \xB7 ${st.label}`,
-            "aria-label": `${name}, ${st.label}${det ? `, ${det}` : ""}. Abrir para editar`,
+            title: `${name}${meta ? ` \xB7 ${meta}` : ""}${det ? ` \xB7 ${det}` : ""} \xB7 ${st.label}`,
+            "aria-label": `${name}, ${st.label}${meta ? `, ${meta}` : ""}${det ? `, ${det}` : ""}${rating ? `, nota ${rating} de 10` : ""}. Abrir para editar`,
             "data-media": m.id,
           }),
       "data-media-cover": cover ? "1" : "0",
-      className: `group/dvd relative shrink-0 overflow-hidden rounded-[3px] border border-zinc-700/90 bg-zinc-950 text-left shadow-[2px_4px_10px_rgba(0,0,0,.6)] transition-all duration-200 ease-out ${
+      className: `group/dvd relative block shrink-0 overflow-hidden rounded-[7px] text-left shadow-[inset_0_0_0_1px_rgba(125,211,252,.38),inset_0_1px_0_rgba(255,255,255,.28),2px_4px_10px_rgba(0,0,0,.65)] transition-all duration-200 ease-out ${
         preview
           ? ""
-          : "cursor-pointer hover:z-10 hover:-translate-y-3 hover:border-cyan-300 hover:shadow-[0_0_14px_2px_rgba(34,211,238,.55),0_12px_20px_rgba(0,0,0,.7)] focus-visible:z-10 focus-visible:-translate-y-3 focus-visible:border-cyan-300 focus-visible:shadow-[0_0_14px_2px_rgba(34,211,238,.55)] focus-visible:outline-none motion-reduce:hover:translate-y-0"
+          : "cursor-pointer hover:z-10 hover:-translate-y-3 hover:shadow-[inset_0_0_0_1px_rgba(165,243,252,.9),0_0_16px_3px_rgba(34,211,238,.55),0_12px_20px_rgba(0,0,0,.7)] focus-visible:z-10 focus-visible:-translate-y-3 focus-visible:shadow-[inset_0_0_0_1px_rgba(165,243,252,.9),0_0_16px_3px_rgba(34,211,238,.55)] focus-visible:outline-none motion-reduce:hover:translate-y-0"
       }`,
-      style: { width: w, height: h },
+      // plástico azulado da caixa
+      style: { width: w, height: h, background: "linear-gradient(160deg,rgba(125,211,252,.34) 0%,rgba(37,99,235,.24) 42%,rgba(14,116,144,.34) 100%)" },
     },
-    // frente: imagem enviada ou capa genérica com o NOME na vertical
-    cover
-      ? HX("span", { className: "absolute inset-0 bg-cover bg-center", style: { backgroundImage: `url("${cover}")` } })
-      : HX(
-          "span",
-          {
-            className: "absolute inset-0 flex flex-col items-center justify-between overflow-hidden pb-3 pl-2 pr-1 pt-2",
-            style: { background: `linear-gradient(165deg,#0b0f16 0%,#12080b 58%,${acc}30 100%)` },
-          },
-          HX("span", { className: "font-orbit text-[9px] leading-none tracking-[0.2em]", style: { color: `${acc}cc` } }, m.year || "\xA0"),
-          HX(
+    // janela da capa: a arte fica por baixo do plástico (inclusive sob a faixa de vidro)
+    HX(
+      "span",
+      { className: "absolute overflow-hidden rounded-[5px] bg-zinc-950", style: { top: pad, left: pad, right: pad, bottom: padB } },
+      cover
+        ? HX("span", { className: "absolute inset-0 bg-cover bg-center", style: { backgroundImage: `url("${cover}")` } })
+        : HX(
             "span",
-            { className: "flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden py-1" },
+            {
+              className: "absolute inset-0 flex flex-col items-center justify-between overflow-hidden pb-3 pl-2 pr-1",
+              style: { paddingTop: band + 5, background: `linear-gradient(165deg,#0b0f16 0%,#12080b 58%,${acc}30 100%)` },
+            },
+            HX("span", { className: `font-orbit text-[9px] leading-none tracking-[0.2em] ${rating > 0 ? "self-start" : ""}`, style: { color: `${acc}cc` } }, m.year || "\xA0"),
             HX(
               "span",
-              {
-                className: "max-h-full rotate-180 overflow-hidden break-words text-center font-bold uppercase leading-tight tracking-[0.1em] [writing-mode:vertical-rl]",
-                style: { color: acc, fontSize: fs, textShadow: `0 0 8px ${acc}99` },
-                "data-media-vtitle": !0,
-              },
-              name,
+              { className: "flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden py-1" },
+              HX(
+                "span",
+                {
+                  className: "max-h-full rotate-180 overflow-hidden break-words text-center font-bold uppercase leading-tight tracking-[0.1em] [writing-mode:vertical-rl]",
+                  style: { color: acc, fontSize: fs, textShadow: `0 0 8px ${acc}99` },
+                  "data-media-vtitle": !0,
+                },
+                name,
+              ),
+            ),
+            HX(
+              "span",
+              { className: `whitespace-nowrap text-[8px] font-semibold uppercase leading-none text-zinc-500 ${w < 110 ? "tracking-[0.06em]" : "tracking-[0.18em]"}` },
+              type ? mdFormat(m.format).short : "\xA0",
             ),
           ),
-          HX(
-            "span",
-            { className: `flex items-center gap-1 whitespace-nowrap text-[8px] font-semibold uppercase leading-none text-zinc-500 ${w < 110 ? "tracking-[0.06em]" : "tracking-[0.18em]"}` },
-            w >= 110 && HX(Cf, { size: 10, className: "shrink-0" }),
-            mdFormat(m.format).short,
-          ),
-        ),
-    // lombada/dobradiça do estojo + faixa de cor da obra
-    HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 left-0 w-[6px] bg-gradient-to-r from-black/75 to-black/10" }),
-    HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 left-[6px] w-px", style: { background: cover ? "rgba(255,255,255,.18)" : acc, boxShadow: cover ? "none" : `0 0 6px ${acc}` } }),
+    ),
+    // faixa superior de vidro azul (backdrop-blur sobre a arte), com o tipo da mídia
+    HX(
+      "span",
+      {
+        "aria-hidden": "true",
+        "data-media-band": type ? type.id : "",
+        className:
+          "pointer-events-none absolute flex items-center justify-center gap-1 overflow-hidden rounded-t-[5px] border-b border-sky-200/40 bg-blue-500/40 text-sky-50 backdrop-blur-[3px]",
+        style: { left: pad, right: pad, top: pad, height: band, boxShadow: "inset 0 1px 0 rgba(255,255,255,.35)" },
+      },
+      HX(Cf, { size: Math.round(band * 0.62), strokeWidth: 2, className: "shrink-0 opacity-90" }),
+      HX(
+        "span",
+        { className: "truncate font-bold uppercase leading-[1.4]", style: { fontSize: Math.max(6.5, band * 0.5), letterSpacing: w < 110 ? "0.12em" : "0.24em" } },
+        type ? type.label : mdFormat(m.format).short,
+      ),
+    ),
+    // lombada/dobradiça da caixa
+    HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute w-[5px] rounded-bl-[5px] bg-gradient-to-r from-black/70 to-black/5", style: { top: pad + band, left: pad, bottom: padB } }),
+    HX("span", {
+      "aria-hidden": "true",
+      className: "pointer-events-none absolute w-px",
+      style: { top: pad + band, bottom: padB, left: pad + 5, background: cover ? "rgba(255,255,255,.2)" : acc, boxShadow: cover ? "none" : `0 0 6px ${acc}` },
+    }),
     // reflexo do plástico
     HX("span", {
       "aria-hidden": "true",
-      className: "pointer-events-none absolute inset-0",
-      style: { background: "linear-gradient(115deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,.03) 32%,rgba(255,255,255,0) 45%)" },
+      className: "pointer-events-none absolute inset-0 rounded-[7px]",
+      style: { background: "linear-gradient(115deg,rgba(255,255,255,.18) 0%,rgba(255,255,255,.04) 30%,rgba(255,255,255,0) 44%)" },
     }),
+    // selo da nota
+    rating > 0 &&
+      HX(
+        "span",
+        {
+          className: "pointer-events-none absolute z-10 flex items-center gap-0.5 rounded-[3px] bg-black/75 px-1 py-px font-orbit text-[9px] font-bold leading-tight text-yellow-300 ring-1 ring-yellow-400/40",
+          style: { top: pad + band + 4, right: pad + 4 },
+          "data-media-rating": rating,
+        },
+        "★",
+        rating,
+      ),
     // ficha que sobe no hover/foco
     !preview &&
       HX(
         "span",
         {
           className:
-            "pointer-events-none absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black via-black/90 to-transparent px-2 pb-3 pt-7 transition-transform duration-200 group-hover/dvd:translate-y-0 group-focus-visible/dvd:translate-y-0",
+            "pointer-events-none absolute translate-y-full overflow-hidden rounded-b-[5px] bg-gradient-to-t from-black via-black/90 to-transparent px-2 pb-3 pt-7 opacity-0 transition-all duration-200 group-hover/dvd:translate-y-0 group-hover/dvd:opacity-100 group-focus-visible/dvd:translate-y-0 group-focus-visible/dvd:opacity-100",
+          style: { left: pad, right: pad, bottom: padB },
         },
         HX("span", { className: "block text-[11px] font-bold uppercase leading-tight tracking-wide text-zinc-100 [overflow-wrap:anywhere] line-clamp-3" }, name),
-        det && HX("span", { className: "mt-0.5 block text-[10px] leading-tight text-zinc-400" }, det),
-        HX("span", { className: "mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.18em]", style: { color: st.id === "radar" ? "#f87171" : st.led } }, st.label),
+        meta && HX("span", { className: "mt-0.5 block text-[10px] font-semibold uppercase leading-tight tracking-wider text-sky-300" }, meta),
+        HX("span", { className: "mt-0.5 block text-[10px] leading-tight text-zinc-400" }, det),
+        rating > 0 && HX("span", { className: "mt-0.5 block font-orbit text-[10px] text-yellow-300" }, `★ ${rating}/10`),
+        HX("span", { className: "mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.18em]", style: { color: st.text } }, st.label),
       ),
-    // LED de status na base do DVD
+    // LED de status na base da caixa
     HX("span", {
       "aria-hidden": "true",
-      className: `pointer-events-none absolute inset-x-[7px] bottom-0 z-20 h-[2px] rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
-      style: { background: st.led, opacity: st.id === "radar" ? 0.55 : 0.9, boxShadow: st.glow },
+      className: `pointer-events-none absolute inset-x-[9px] bottom-[1.5px] z-20 h-[2px] rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+      style: { background: st.led, opacity: st.id === "radar" ? 0.6 : 0.95, boxShadow: st.glow },
     }),
     HX("span", {
       "aria-hidden": "true",
       "data-media-led": st.id,
-      className: `pointer-events-none absolute bottom-[5px] right-[5px] z-20 h-[7px] w-[7px] rounded-full ring-1 ring-black/80 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
-      style: { background: st.led, boxShadow: st.glow },
+      className: `pointer-events-none absolute z-20 h-[7px] w-[7px] rounded-full ring-1 ring-black/80 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+      style: { background: st.led, boxShadow: st.glow, bottom: padB + 3, right: pad + 3 },
     }),
   );
 }
@@ -12330,7 +12441,7 @@ function DvdAddSlot({ w, h, onAdd }) {
       "data-media-add": !0,
       "aria-label": "Cadastrar m\xEDdia",
       className:
-        "group/add flex shrink-0 flex-col items-center justify-center gap-2 rounded-[3px] border-2 border-dashed border-zinc-700 text-zinc-500 transition-all duration-200 hover:-translate-y-3 hover:border-cyan-400 hover:text-cyan-300 hover:shadow-[0_0_14px_rgba(34,211,238,.35)] focus-visible:-translate-y-3 focus-visible:border-cyan-400 focus-visible:text-cyan-300 focus-visible:outline-none motion-reduce:hover:translate-y-0",
+        "flex shrink-0 flex-col items-center justify-center gap-2 rounded-[7px] border-2 border-dashed border-zinc-700 text-zinc-500 transition-all duration-200 hover:-translate-y-3 hover:border-cyan-400 hover:text-cyan-300 hover:shadow-[0_0_14px_rgba(34,211,238,.35)] focus-visible:-translate-y-3 focus-visible:border-cyan-400 focus-visible:text-cyan-300 focus-visible:outline-none motion-reduce:hover:translate-y-0",
       style: { width: w, height: h },
     },
     HX(gt, { size: 22, strokeWidth: 2.5 }),
@@ -12356,7 +12467,7 @@ function MediaShelf({ items, onOpen, onAdd, showAdd }) {
   }, []);
   let small = cw > 0 && cw < 440,
     mid = cw >= 440 && cw < 780,
-    size = small ? { w: 92, h: 138 } : mid ? { w: 108, h: 162 } : { w: 128, h: 192 }, // proporção de capa de DVD (2:3)
+    size = small ? { w: 92, h: 138 } : mid ? { w: 108, h: 162 } : { w: 128, h: 192 }, // proporção de capa (2:3)
     gap = small ? 10 : 14,
     padX = small ? 10 : 18,
     cols = Math.max(1, Math.floor((Math.max(0, cw - padX * 2) + gap) / (size.w + gap))),
@@ -12411,7 +12522,7 @@ function MediaShelf({ items, onOpen, onAdd, showAdd }) {
               style: { gap, paddingLeft: padX, paddingRight: padX, paddingTop: 20, minHeight: size.h + 20, marginBottom: 14 },
             },
             ...row.map((m) =>
-              m.add ? HX(DvdAddSlot, { key: m.id, w: size.w, h: size.h, onAdd }) : HX(DvdCase, { key: m.id, m, w: size.w, h: size.h, onOpen }),
+              m.add ? HX(DvdAddSlot, { key: m.id, w: size.w, h: size.h, onAdd }) : HX(MediaCase, { key: m.id, m, w: size.w, h: size.h, onOpen }),
             ),
             // quina da prateleira + fita de LED por baixo
             HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-x-0 -bottom-1 h-px bg-zinc-600/50" }),
@@ -12425,6 +12536,68 @@ function MediaShelf({ items, onOpen, onAdd, showAdd }) {
     ),
   );
 }
+// ---- nota em estrelas (1 a 10; clicar de novo na mesma estrela limpa) ----
+function MdStars({ value, onChange }) {
+  let [hov, setHov] = (0, K.useState)(0),
+    box = (0, K.useRef)(null),
+    v = hov || value;
+  return HX(
+    "div",
+    { className: "flex flex-wrap items-center gap-x-3 gap-y-1" },
+    HX(
+      "div",
+      {
+        ref: box,
+        className: "flex items-center",
+        role: "radiogroup",
+        "aria-label": "Nota de 1 a 10",
+        onMouseLeave: () => setHov(0),
+        onKeyDown: (ev) => {
+          let d = ev.key === "ArrowRight" || ev.key === "ArrowUp" ? 1 : ev.key === "ArrowLeft" || ev.key === "ArrowDown" ? -1 : 0,
+            nv = ev.key === "Home" ? 1 : ev.key === "End" ? 10 : d ? Math.max(0, Math.min(10, value + d)) : -1;
+          if (nv < 0) return;
+          ev.preventDefault();
+          setHov(0);
+          onChange(nv);
+          // foco acompanha a estrela escolhida (roving tabindex)
+          let el = box.current && box.current.querySelector(`[data-star="${Math.max(1, nv)}"]`);
+          el && el.focus();
+        },
+      },
+      ...Array.from({ length: 10 }, (_, i) => {
+        let n = i + 1,
+          on = n <= v;
+        return HX(
+          "button",
+          {
+            key: n,
+            type: "button",
+            role: "radio",
+            "aria-checked": value === n,
+            "aria-label": `Nota ${n}`,
+            "data-star": n,
+            tabIndex: value ? (value === n ? 0 : -1) : n === 1 ? 0 : -1,
+            onMouseEnter: () => setHov(n),
+            onClick: () => onChange(value === n ? 0 : n),
+            className: "p-[3px] transition-transform duration-100 hover:scale-125 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400",
+          },
+          HX(Xn, {
+            size: 17,
+            strokeWidth: 1.8,
+            className: on ? "fill-yellow-400 text-yellow-400 drop-shadow-[0_0_4px_rgba(250,204,21,.85)]" : "text-zinc-600",
+          }),
+        );
+      }),
+    ),
+    HX("span", { className: "min-w-[3.5rem] font-orbit text-[15px] text-yellow-300", "data-rating-value": !0 }, v ? `${v}/10` : "—"),
+    value > 0 &&
+      HX(
+        "button",
+        { type: "button", onClick: () => onChange(0), className: "text-[10px] uppercase tracking-wider text-zinc-500 underline-offset-2 hover:text-red-300 hover:underline" },
+        "Sem nota",
+      ),
+  );
+}
 // ---- modal de cadastro / edição ----
 function MediaModal({ item, onSave, onDelete, onClose }) {
   let edit = !!item,
@@ -12432,18 +12605,54 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
     [err, setErr] = (0, K.useState)(""),
     [delAsk, setDelAsk] = (0, K.useState)(!1),
     set = (k, v) => (setF((o) => ({ ...o, [k]: v })), setErr("")),
-    durLabel = f.format === "episodios" ? "Dura\xE7\xE3o M\xE9dia por Epis\xF3dio (Minutos)" : "Dura\xE7\xE3o Total (Minutos)",
+    eps = f.format === "episodios",
+    durLabel = eps ? "Dura\xE7\xE3o M\xE9dia por Epis\xF3dio (Minutos)" : "Dura\xE7\xE3o Total (Minutos)",
     save = () => {
-      let name = f.name.trim();
+      let name = String(f.name || "").trim();
       if (!name) return setErr("D\xEA um nome \xE0 m\xEDdia.");
       let year = mdInt(f.year, 1870, 2200),
-        dur = mdInt(f.duration, 0, 1e5);
+        dur = mdInt(f.duration, 0, 1e5),
+        epc = mdInt(f.episodesCount, 0, 1e5),
+        sec = mdInt(f.seasonsCount, 0, 1e3);
       if (String(f.year).trim() && !year) return setErr("Ano inv\xE1lido (use 4 d\xEDgitos, ex.: 2019).");
       if (String(f.duration).trim() && !dur) return setErr("Dura\xE7\xE3o inv\xE1lida (minutos inteiros).");
-      (onSave({ name: name.slice(0, 120), year, format: f.format, duration: dur, cover: f.cover, status: f.status }), onClose());
+      if (eps && String(f.episodesCount).trim() && !epc) return setErr("Quantidade de epis\xF3dios inv\xE1lida.");
+      if (eps && String(f.seasonsCount).trim() && !sec) return setErr("Quantidade de temporadas inv\xE1lida.");
+      (onSave({
+        name: name.slice(0, 120),
+        year,
+        format: f.format,
+        duration: dur,
+        cover: f.cover,
+        status: f.status,
+        genreType: mdType(f.genreType) ? f.genreType : "",
+        rating: mdRating(f.rating),
+        review: String(f.review || "").slice(0, 4e3),
+        episodesCount: epc,
+        seasonsCount: sec,
+      }),
+        onClose());
     },
     lbl = HLBL,
-    sel = `${HIN} cursor-pointer [&>option]:bg-zinc-950 [&>option]:text-cyan-100`;
+    sel = `${HIN} cursor-pointer [&>option]:bg-zinc-950 [&>option]:text-cyan-100`,
+    num = (key, label, ph, max) =>
+      HX(
+        "label",
+        { className: "block" },
+        HX("span", { className: lbl }, label),
+        HX("input", {
+          type: "number",
+          inputMode: "numeric",
+          "aria-label": label,
+          min: 0,
+          max,
+          step: 1,
+          value: f[key],
+          placeholder: ph,
+          onChange: (ev) => set(key, ev.target.value.slice(0, 6)),
+          className: `${HIN} font-orbit`,
+        }),
+      );
   (0, K.useEffect)(() => {
     let k = (ev) => {
       ev.key === "Escape" && onClose();
@@ -12486,14 +12695,14 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
         HX(
           "div",
           { className: "mt-4 flex flex-col gap-5 sm:flex-row" },
-          // prévia ao vivo do DVD
+          // prévia ao vivo da caixa
           HX(
             "div",
             { className: "flex shrink-0 flex-col items-center gap-2 sm:w-[150px]", "data-media-preview": !0 },
             HX(
               "div",
               { className: "flex items-end justify-center border-b-4 border-zinc-800 px-3 pt-3 shadow-[0_4px_10px_rgba(0,0,0,0.5)]" },
-              HX(DvdCase, { m: f, w: 128, h: 192, preview: !0 }),
+              HX(MediaCase, { m: f, w: 128, h: 192, preview: !0 }),
             ),
             HX("span", { className: "text-[9px] uppercase tracking-[0.25em] text-zinc-500" }, "Pr\xE9-visualiza\xE7\xE3o"),
           ),
@@ -12517,6 +12726,17 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
                 },
                 className: HIN,
               }),
+            ),
+            HX(
+              "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Tipo de m\xEDdia"),
+              HX(
+                "select",
+                { "aria-label": "Tipo de m\xEDdia", value: f.genreType || "", onChange: (ev) => set("genreType", ev.target.value), className: sel },
+                HX("option", { value: "" }, "Selecione…"),
+                ...MD_TYPES.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+              ),
             ),
             HX(
               "label",
@@ -12547,6 +12767,16 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
             ),
             HX(
               "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Status"),
+              HX(
+                "select",
+                { "aria-label": "Status", value: f.status, onChange: (ev) => set("status", ev.target.value), className: sel },
+                ...MD_STATUS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+              ),
+            ),
+            HX(
+              "label",
               { className: "col-span-2 block" },
               HX("span", { className: lbl, "data-media-dur-label": !0 }, durLabel),
               HX("input", {
@@ -12556,11 +12786,24 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
                 min: 0,
                 step: 1,
                 value: f.duration,
-                placeholder: f.format === "episodios" ? "24" : "120",
+                placeholder: eps ? "24" : "120",
                 onChange: (ev) => set("duration", ev.target.value.slice(0, 6)),
                 className: `${HIN} font-orbit`,
               }),
             ),
+            // só para obras em episódios
+            eps && HX("div", { className: "block", "data-media-eps": !0 }, num("episodesCount", "Quantidade de Epis\xF3dios", "26", 1e5)),
+            eps && HX("div", { className: "block", "data-media-seasons": !0 }, num("seasonsCount", "Quantidade de Temporadas", "1", 1e3)),
+            eps &&
+              Number(f.episodesCount) > 0 &&
+              Number(f.duration) > 0 &&
+              HX(
+                "p",
+                { className: "col-span-2 -mt-1 text-[11px] text-zinc-500", "data-media-total": !0 },
+                `Total estimado: ${Number(f.episodesCount)} ep. \xD7 ${Number(f.duration)} min = `,
+                HX("span", { className: "font-orbit text-cyan-300" }, mdDur(Number(f.episodesCount) * Number(f.duration))),
+              ),
+            HX("div", { className: "col-span-2" }, HX("span", { className: lbl }, "Nota"), HX(MdStars, { value: mdRating(f.rating), onChange: (v) => set("rating", v) })),
             HX(
               "div",
               { className: "col-span-2" },
@@ -12570,12 +12813,21 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
             HX(
               "label",
               { className: "col-span-2 block" },
-              HX("span", { className: lbl }, "Status"),
               HX(
-                "select",
-                { "aria-label": "Status", value: f.status, onChange: (ev) => set("status", ev.target.value), className: sel },
-                ...MD_STATUS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+                "span",
+                { className: `${lbl} flex items-center justify-between` },
+                "An\xE1lise / Resenha",
+                HX("span", { className: "font-normal normal-case tracking-normal text-zinc-500" }, `${String(f.review || "").length}/4000`),
               ),
+              HX("textarea", {
+                "aria-label": "An\xE1lise / Resenha",
+                value: f.review || "",
+                rows: 5,
+                maxLength: 4e3,
+                placeholder: "O que voc\xEA achou? Pontos fortes, fracos, cenas marcantes…",
+                onChange: (ev) => set("review", ev.target.value),
+                className: `${HIN} resize-y leading-snug`,
+              }),
             ),
           ),
         ),
@@ -12594,8 +12846,76 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
     ),
   );
 }
+// ---- HUD de estatísticas (só obras com status "Assistido") ----
+function MediaStats({ stats, total }) {
+  let days = stats.hours / 24,
+    cards = [
+      {
+        k: "watched",
+        label: "Obras assistidas",
+        value: stats.watched.toLocaleString("pt-BR"),
+        sub: `de ${total} na estante`,
+        color: "#22d3ee",
+        icon: Wn,
+      },
+      {
+        k: "eps",
+        label: "Epis\xF3dios vistos",
+        value: stats.eps.toLocaleString("pt-BR"),
+        sub: stats.missing ? `${stats.missing} obra${stats.missing === 1 ? "" : "s"} sem n\xBA de epis\xF3dios` : "volume \xFAnico conta 1",
+        warn: stats.missing > 0,
+        color: "#facc15",
+        icon: Cf,
+      },
+      {
+        k: "hours",
+        label: "Horas assistidas",
+        value: mdHours(stats.hours),
+        sub: days >= 1 ? `≈ ${(Math.round(days * 10) / 10).toLocaleString("pt-BR")} dias de tela` : "soma das dura\xE7\xF5es",
+        color: "#e879f9",
+        icon: xf,
+      },
+    ];
+  return HX(
+    "div",
+    { className: "mb-4 grid grid-cols-3 gap-2 sm:gap-3", "data-media-stats": !0, role: "group", "aria-label": "Estat\xEDsticas das obras assistidas" },
+    ...cards.map((c) =>
+      HX(
+        "div",
+        { key: c.k, className: "relative min-w-0", style: { filter: `drop-shadow(0 0 10px ${c.color}33)` } },
+        HX("div", { className: "absolute inset-0", style: { clipPath: it, background: `${c.color}99` } }),
+        HX("div", { className: "absolute bg-[#0a0c12]/95", style: { inset: 1.5, clipPath: it } }),
+        HX("div", {
+          "aria-hidden": "true",
+          className: "absolute inset-x-0 top-0 h-[2px]",
+          style: { background: `linear-gradient(90deg,transparent,${c.color},transparent)`, boxShadow: `0 0 8px ${c.color}` },
+        }),
+        HX(
+          "div",
+          { className: "relative flex min-w-0 flex-col px-2.5 py-2.5 sm:px-4 sm:py-3" },
+          HX(
+            "span",
+            { className: "flex min-w-0 items-center gap-1.5 text-[8.5px] font-semibold uppercase leading-tight tracking-[0.18em] sm:text-[10.5px] sm:tracking-[0.24em]", style: { color: c.color } },
+            HX(c.icon, { size: 13, strokeWidth: 2.2, className: "hidden shrink-0 sm:block" }),
+            HX("span", { className: "min-w-0" }, c.label),
+          ),
+          HX(
+            "span",
+            {
+              className: "mt-1 truncate font-orbit text-[21px] font-bold leading-none text-zinc-50 min-[400px]:text-[24px] sm:text-[34px]",
+              style: { textShadow: `0 0 12px ${c.color}aa` },
+              [`data-stat-${c.k}`]: !0,
+            },
+            c.value,
+          ),
+          HX("span", { className: `mt-1.5 text-[9px] leading-tight sm:text-[11px] ${c.warn ? "text-yellow-400/80" : "text-zinc-500"}` }, c.sub),
+        ),
+      ),
+    ),
+  );
+}
 // ---- filtro de status (chip com o LED) ----
-function MdChip({ on, onClick, led, pulse, children, label }) {
+function MdChip({ on, onClick, st, children, label }) {
   return HX(
     "button",
     {
@@ -12607,7 +12927,11 @@ function MdChip({ on, onClick, led, pulse, children, label }) {
         on ? "border-cyan-400 bg-cyan-400/15 text-cyan-200" : "border-zinc-700 bg-zinc-950/80 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
       }`,
     },
-    led && HX("span", { className: `h-2 w-2 shrink-0 rounded-full ${pulse ? "animate-pulse motion-reduce:animate-none" : ""}`, style: { background: led, boxShadow: led === "#7f1d1d" ? "none" : `0 0 6px ${led}` } }),
+    st &&
+      HX("span", {
+        className: `h-2 w-2 shrink-0 rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+        style: { background: st.led, boxShadow: st.glow },
+      }),
     children,
   );
 }
@@ -12615,23 +12939,34 @@ function MdChip({ on, onClick, led, pulse, children, label }) {
 function MediaPage({ items, setItems }) {
   let [modal, setModal] = (0, K.useState)(null),
     [filter, setFilter] = (0, K.useState)("all"),
+    [typeF, setTypeF] = (0, K.useState)("all"),
     [q, setQ] = (0, K.useState)(""),
     [sort, setSort] = (0, K.useState)("shelf"),
-    counts = MD_STATUS.reduce((o, s) => ((o[s.id] = items.filter((m) => m.status === s.id).length), o), {}),
+    // HUD: recalculado só quando a lista muda
+    stats = (0, K.useMemo)(() => mdStats(items), [items]),
+    counts = (0, K.useMemo)(() => MD_STATUS.reduce((o, s) => ((o[s.id] = items.filter((m) => m.status === s.id).length), o), {}), [items]),
     term = q.trim().toLowerCase(),
     stOrder = { assistindo: 0, radar: 1, assistido: 2 },
     shown = items
-      .filter((m) => (filter === "all" || m.status === filter) && (!term || `${m.name} ${m.year}`.toLowerCase().includes(term)))
+      .filter(
+        (m) =>
+          (filter === "all" || m.status === filter) &&
+          (typeF === "all" || (m.genreType || "") === typeF) &&
+          (!term || `${m.name} ${m.year} ${(mdType(m.genreType) || {}).label || ""}`.toLowerCase().includes(term)),
+      )
       .map((m, i) => ({ m, i })),
     editing = modal && modal.id ? items.find((m) => m.id === modal.id) : null;
   sort === "name"
     ? shown.sort((a, b) => a.m.name.localeCompare(b.m.name, "pt-BR", { sensitivity: "base" }))
     : sort === "year"
       ? shown.sort((a, b) => (Number(b.m.year) || 0) - (Number(a.m.year) || 0) || a.i - b.i)
-      : sort === "status" && shown.sort((a, b) => stOrder[a.m.status] - stOrder[b.m.status] || a.i - b.i);
+      : sort === "rating"
+        ? shown.sort((a, b) => mdRating(b.m.rating) - mdRating(a.m.rating) || a.i - b.i)
+        : sort === "status" && shown.sort((a, b) => stOrder[a.m.status] - stOrder[b.m.status] || a.i - b.i);
   let list = shown.map((x) => x.m),
     open = (id) => setModal({ id }),
-    add = () => setModal({ id: null });
+    add = () => setModal({ id: null }),
+    ctl = "shrink-0 cursor-pointer border border-red-900/80 bg-[#0a0507] px-2 py-1.5 text-[13px] text-cyan-100 [color-scheme:dark] focus:border-cyan-400 focus:outline-none [&>option]:bg-zinc-950";
   return HX(
     "div",
     { className: "min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-8", "data-media-page": !0 },
@@ -12641,42 +12976,40 @@ function MediaPage({ items, setItems }) {
       sub: `Filmes, s\xE9ries e animes \xB7 ${items.length} t\xEDtulo${items.length === 1 ? "" : "s"} na estante`,
       right: HX(ye, { variant: "primary", onClick: add }, HX(gt, { size: 15, strokeWidth: 3 }), "Cadastrar m\xEDdia"),
     }),
-    // HUD: filtros por status (com LED), busca e ordenação
+    HX(MediaStats, { stats, total: items.length }),
+    // filtros por status (com LED), tipo, busca e ordenação
     HX(
       "div",
       { className: "mb-4 flex flex-wrap items-center gap-2" },
       HX(MdChip, { on: filter === "all", onClick: () => setFilter("all"), label: "Mostrar todas" }, `Todas \xB7 ${items.length}`),
       ...MD_STATUS.map((s) =>
-        HX(
-          MdChip,
-          { key: s.id, on: filter === s.id, onClick: () => setFilter(filter === s.id ? "all" : s.id), led: s.led, pulse: s.pulse, label: `Filtrar: ${s.label}` },
-          `${s.label} \xB7 ${counts[s.id]}`,
-        ),
+        HX(MdChip, { key: s.id, on: filter === s.id, onClick: () => setFilter(filter === s.id ? "all" : s.id), st: s, label: `Filtrar: ${s.label}` }, `${s.label} \xB7 ${counts[s.id]}`),
       ),
       HX(
         "div",
-        { className: "ml-auto flex w-full min-w-0 items-center gap-2 sm:w-auto" },
+        { className: "ml-auto flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap" },
         HX(
           "label",
-          { className: "relative min-w-0 flex-1 sm:w-56 sm:flex-none" },
+          { className: "relative min-w-0 flex-1 basis-full sm:w-60 sm:flex-none sm:basis-auto" },
           HX(ss, { size: 14, className: "pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" }),
           HX("input", {
             type: "search",
             "aria-label": "Buscar m\xEDdia",
             value: q,
-            placeholder: "Buscar t\xEDtulo ou ano…",
+            placeholder: "Buscar t\xEDtulo, ano ou tipo…",
             onChange: (ev) => setQ(ev.target.value),
             className: `${HIN} pl-8`,
           }),
         ),
         HX(
           "select",
-          {
-            "aria-label": "Ordenar estante",
-            value: sort,
-            onChange: (ev) => setSort(ev.target.value),
-            className: "shrink-0 cursor-pointer border border-red-900/80 bg-[#0a0507] px-2 py-1.5 text-[13px] text-cyan-100 [color-scheme:dark] focus:border-cyan-400 focus:outline-none [&>option]:bg-zinc-950",
-          },
+          { "aria-label": "Filtrar por tipo de m\xEDdia", value: typeF, onChange: (ev) => setTypeF(ev.target.value), className: `${ctl} min-w-0 flex-1 sm:flex-none` },
+          HX("option", { value: "all" }, "Todos os tipos"),
+          ...MD_TYPES.map((t) => HX("option", { key: t.id, value: t.id }, t.label)),
+        ),
+        HX(
+          "select",
+          { "aria-label": "Ordenar estante", value: sort, onChange: (ev) => setSort(ev.target.value), className: `${ctl} min-w-0 flex-1 sm:flex-none` },
           ...MD_SORTS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
         ),
       ),
@@ -12690,7 +13023,7 @@ function MediaPage({ items, setItems }) {
     items.length > 0 &&
       list.length === 0 &&
       HX("p", { className: "mb-3 text-center text-[13px] uppercase tracking-[0.2em] text-zinc-500" }, "Nenhuma m\xEDdia com esse filtro"),
-    HX(MediaShelf, { items: list, onOpen: open, onAdd: add, showAdd: filter === "all" && !term }),
+    HX(MediaShelf, { items: list, onOpen: open, onAdd: add, showAdd: filter === "all" && typeF === "all" && !term }),
     modal &&
       kbPortal(
         HX(MediaModal, {
@@ -12752,7 +13085,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     [hbDay, setHbDay] = (0, K.useState)(hbToday),
     // Contagens regressivas do HUB: [{ id, name, date, icon }] (até CD_MAX)
     [countdowns, setCountdowns] = (0, K.useState)(cdLoadAll),
-    // Mídias: estante de DVDs [{ id, name, year, format, duration, cover, status }]
+    // Mídias: estante (caixas Blu-ray) [{ id, name, year, format, duration, cover, status, genreType, rating, review, episodesCount, seasonsCount }]
     [mediaLibrary, setMediaLibrary] = (0, K.useState)(mdLoad),
     dayRef = (0, K.useRef)(""),
     navRef = (0, K.useRef)(null),
