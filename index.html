@@ -12825,13 +12825,13 @@ function MediaPage({ items, setItems }) {
   );
 }
 
-// ===== BACKLOG DE JOGOS · estante física de loja de games (mesmas prateleiras da aba MÍDIAS) =====
+// ===== BACKLOG DE JOGOS · biblioteca no estilo da Steam =====
 // Usa o estado global de jogos que já existia (chave "skilltree-games-v1"), sem mudar o formato:
-// games = [{ id, cover (data URL base64), name, genre, hltb (h), time (h), platform, status, date ("AAAA-MM-DD"), rating, difficulty }]
+// games = [{ id, cover (data URL base64 ou link https), name, genre, hltb (h), time (h), platform, status, date ("AAAA-MM-DD"), rating, difficulty }]
 // status ∈ p2 ("Não Iniciado", "Jogando", "Zerado", "Platinado", "Dropado", "Pausado") ou "" · rating ∈ Z8 · difficulty ∈ Q8
-// LED de status na base da caixa (+ troféu para Platinado)
+// Status na capa: círculo no canto inferior esquerdo (troféu = Platinado, verde = Zerado, vermelho = Dropado…)
 var GM_ST = {
-    "": { label: "Sem status", led: "#3f3f46", glow: "none", text: "#71717a" },
+    "": { label: "Sem status", led: "#3f3f46", glow: "none", text: "#8b929a" },
     "N\xE3o Iniciado": { label: "N\xE3o Iniciado", led: "#94a3b8", glow: "0 0 5px rgba(148,163,184,.6)", text: "#cbd5e1" },
     Jogando: { label: "Jogando", led: "#22d3ee", glow: "0 0 6px #22d3ee, 0 0 12px rgba(34,211,238,.7)", pulse: !0, text: "#22d3ee" },
     Zerado: { label: "Zerado", led: "#4ade80", glow: "0 0 6px #4ade80, 0 0 12px rgba(74,222,128,.7)", text: "#4ade80" },
@@ -12840,20 +12840,20 @@ var GM_ST = {
     Pausado: { label: "Pausado", led: "#fb923c", glow: "0 0 6px #fb923c, 0 0 12px rgba(251,146,60,.7)", text: "#fb923c" },
   },
   gmSt = (s) => GM_ST[s] || GM_ST[""],
-  // tarja da plataforma no topo da caixa (cor por família de console); o texto é o nome digitado na plataforma
+  // etiqueta da plataforma (canto superior esquerdo da capa): azul = PlayStation, cinza/preta = PC…
   GM_PLATS = [
-    { k: "ps", re: /\bps ?[1-5]\b|playstation|\bpsp\b|\bvita\b/i, band: "linear-gradient(180deg,#3b82f6 0%,#1d4ed8 55%,#1e40af 100%)", ink: "#eff6ff", plastic: "linear-gradient(160deg,rgba(96,165,250,.36) 0%,rgba(29,78,216,.26) 45%,rgba(30,58,138,.42) 100%)", deep: "#0b1a3a" },
-    { k: "xbox", re: /xbox/i, band: "linear-gradient(180deg,#22c55e 0%,#15803d 100%)", ink: "#f0fdf4", plastic: "linear-gradient(160deg,rgba(74,222,128,.3) 0%,rgba(21,128,61,.24) 45%,rgba(20,83,45,.42) 100%)", deep: "#0a2414" },
-    { k: "switch", re: /switch/i, band: "linear-gradient(180deg,#f87171 0%,#dc2626 55%,#b91c1c 100%)", ink: "#fef2f2", plastic: "linear-gradient(160deg,rgba(248,113,113,.32) 0%,rgba(185,28,28,.26) 45%,rgba(127,29,29,.44) 100%)", deep: "#2a0a0a" },
-    { k: "snes", re: /snes|super ?nintendo/i, band: "linear-gradient(180deg,#a78bfa 0%,#7c3aed 55%,#5b21b6 100%)", ink: "#f5f3ff", plastic: "linear-gradient(160deg,rgba(212,212,216,.3) 0%,rgba(113,113,122,.3) 45%,rgba(63,63,70,.5) 100%)", deep: "#1a1033" },
-    { k: "n64", re: /\bnd?64\b|nintendo ?64/i, band: "linear-gradient(180deg,#52525b 0%,#27272a 100%)", ink: "#fde047", plastic: "linear-gradient(160deg,rgba(113,113,122,.4) 0%,rgba(39,39,42,.6) 45%,rgba(9,9,11,.8) 100%)", deep: "#161616" },
-    { k: "nds", re: /\bn?ds\b|\b3ds\b|nintendo ?ds/i, band: "linear-gradient(180deg,#f4f4f5 0%,#d4d4d8 55%,#a1a1aa 100%)", ink: "#18181b", plastic: "linear-gradient(160deg,rgba(244,244,245,.3) 0%,rgba(161,161,170,.26) 45%,rgba(82,82,91,.44) 100%)", deep: "#15161a" },
-    { k: "sega", re: /\bmg\b|mega ?drive|genesis|sega|master ?system|dreamcast|saturn/i, band: "linear-gradient(180deg,#27272a 0%,#09090b 100%)", ink: "#f87171", plastic: "linear-gradient(160deg,rgba(63,63,70,.55) 0%,rgba(24,24,27,.85) 45%,rgba(9,9,11,.95) 100%)", deep: "#120708" },
-    { k: "pc", re: /\bpc\b|steam|windows|\bepic\b|\bgog\b|computador/i, band: "linear-gradient(180deg,#52525b 0%,#27272a 50%,#09090b 100%)", ink: "#f4f4f5", plastic: "linear-gradient(160deg,rgba(82,82,91,.55) 0%,rgba(24,24,27,.88) 45%,rgba(9,9,11,.96) 100%)", deep: "#101114" },
-    { k: "retro", re: /retro|\bnes\b|atari|game ?boy|\bgba\b|\bgbc\b/i, band: "linear-gradient(180deg,#fbbf24 0%,#d97706 100%)", ink: "#1c1917", plastic: "linear-gradient(160deg,rgba(212,212,216,.3) 0%,rgba(113,113,122,.3) 45%,rgba(63,63,70,.5) 100%)", deep: "#1f1406" },
+    { k: "ps", re: /\bps ?[1-5]\b|playstation|\bpsp\b|\bvita\b/i, chip: "#2563eb", ink: "#ffffff" },
+    { k: "xbox", re: /xbox/i, chip: "#16a34a", ink: "#ffffff" },
+    { k: "switch", re: /switch/i, chip: "#dc2626", ink: "#ffffff" },
+    { k: "snes", re: /snes|super ?nintendo/i, chip: "#7c3aed", ink: "#ffffff" },
+    { k: "n64", re: /\bnd?64\b|nintendo ?64/i, chip: "#3f3f46", ink: "#fde047" },
+    { k: "nds", re: /\bn?ds\b|\b3ds\b|nintendo ?ds/i, chip: "#d4d4d8", ink: "#18181b" },
+    { k: "sega", re: /\bmg\b|mega ?drive|genesis|sega|master ?system|dreamcast|saturn/i, chip: "#111114", ink: "#f87171" },
+    { k: "pc", re: /\bpc\b|steam|windows|\bepic\b|\bgog\b|computador/i, chip: "#1f2329", ink: "#e5e7eb" },
+    { k: "retro", re: /retro|\bnes\b|atari|game ?boy|\bgba\b|\bgbc\b/i, chip: "#d97706", ink: "#1c1917" },
   ],
-  GM_PLAT_OTHER = { k: "other", band: "linear-gradient(180deg,#06b6d4 0%,#0e7490 100%)", ink: "#ecfeff", plastic: "linear-gradient(160deg,rgba(103,232,249,.3) 0%,rgba(14,116,144,.26) 45%,rgba(22,78,99,.44) 100%)", deep: "#062028" },
-  GM_PLAT_NONE = { k: "none", band: "linear-gradient(180deg,#3f3f46 0%,#18181b 100%)", ink: "#a1a1aa", plastic: "linear-gradient(160deg,rgba(82,82,91,.4) 0%,rgba(24,24,27,.8) 45%,rgba(9,9,11,.92) 100%)", deep: "#111114" },
+  GM_PLAT_OTHER = { k: "other", chip: "#0e7490", ink: "#ecfeff" },
+  GM_PLAT_NONE = { k: "none", chip: "#3d4450", ink: "#b8bcbf" },
   gmPlat = (p) => {
     let raw = String(p || "").trim(),
       retro = /^retro\s*[-–:]\s*/i.test(raw),
@@ -12864,47 +12864,92 @@ var GM_ST = {
   // "12,5" -> 12.5 (mesma leitura das horas da tabela antiga)
   gmNum = (v) => Math.max(0, ea(v)),
   gmHrs = (x) => `${String(Math.round(x * 10) / 10).replace(".", ",")}h`,
-  gmDate = (d) => {
-    let [y, m, dd] = String(d || "").split("-");
-    return y && m && dd ? `${dd}/${m}/${y}` : "";
+  GM_MES = ["jan.", "fev.", "mar.", "abr.", "mai.", "jun.", "jul.", "ago.", "set.", "out.", "nov.", "dez."],
+  // data no jeito da Steam: "20 de set." (ano atual) · "5 de dez. de 2025" (outro ano)
+  // curta, para capas pequenas: "20 set." · "05/12/25"
+  gmSteamDate = (d, short) => {
+    let [y, m, dd] = String(d || "").split("-").map(Number);
+    if (!y || !m || !dd || m > 12) return "";
+    let other = y !== new Date().getFullYear(),
+      mes = GM_MES[m - 1];
+    return short
+      ? other
+        ? `${String(dd).padStart(2, "0")}/${String(m).padStart(2, "0")}/${String(y).slice(2)}`
+        : `${dd} ${mes}`
+      : `${dd} de ${mes}${other ? ` de ${y}` : ""}`;
   },
   gmTop = (r) => Oie.includes(r), // notas S (dourado)
-  // capa: data URL base64 (upload) ou link https antigo (a tabela exibia qualquer URL) — sem aspas/parênteses, seguro em url("...")
+  // capa: data URL base64 (upload) ou link http(s) — sem aspas/parênteses, seguro em url("...")
   gmCoverOk = (s) => mdCoverOk(s) || /^https?:\/\/[^\s"'()\\<>]+$/i.test(String(s || "")),
+  gmHue = (s) => {
+    let h = 11;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h) % 360;
+  },
   GM_SORTS = [
-    { id: "shelf", label: "Ordem da estante" },
-    { id: "name", label: "Nome (A–Z)" },
+    { id: "shelf", label: "Ordem da biblioteca" },
+    { id: "name", label: "Alfab\xE9tica (A–Z)" },
+    { id: "hours", label: "Horas jogadas" },
+    { id: "date", label: "Data de conclus\xE3o" },
     { id: "rating", label: "Nota (maior)" },
+    { id: "progress", label: "Progresso (maior)" },
     { id: "status", label: "Status" },
     { id: "platform", label: "Plataforma" },
-    { id: "progress", label: "Progresso (maior)" },
   ],
-  GM_ST_ORDER = { Jogando: 0, Pausado: 1, "N\xE3o Iniciado": 2, "": 3, Zerado: 4, Platinado: 5, Dropado: 6 };
-// ---- caixa de jogo: estojo de console com tarja da plataforma no topo, LED de status na base e troféu se platinado ----
-function GameCase({ m, w, h, onOpen, preview }) {
+  GM_ST_ORDER = { Jogando: 0, Pausado: 1, "N\xE3o Iniciado": 2, "": 3, Zerado: 4, Platinado: 5, Dropado: 6 },
+  // tamanho das capas (largura mínima em px), como o controle de zoom da biblioteca da Steam
+  GM_ZOOM = [96, 124, 152, 184, 220],
+  GM_ZOOM_KEY = "stui-games-zoom", // preferência deste aparelho: fora do prefixo skilltree- (não entra no backup/sincronização)
+  GM_FONT = '"Motiva Sans","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
+  gmZoomLoad = () => {
+    try {
+      let v = Number(localStorage.getItem(GM_ZOOM_KEY));
+      if (Number.isInteger(v) && v >= 0 && v < GM_ZOOM.length && localStorage.getItem(GM_ZOOM_KEY) !== null) return v;
+    } catch {}
+    let w = typeof window != "undefined" ? window.innerWidth : 1280;
+    return w < 640 ? 0 : w < 1024 ? 2 : 3;
+  };
+// ícone do status dentro do círculo da capa
+function GmStIcon({ s, size = 12 }) {
+  let svg = (...c) => HX("svg", { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": "true" }, ...c);
+  return s === "Platinado"
+    ? HX(Sr, { size, strokeWidth: 2.4 })
+    : s === "Zerado"
+      ? HX(Wn, { size, strokeWidth: 3.2 })
+      : s === "Dropado"
+        ? HX(Da, { size, strokeWidth: 3.2 })
+        : s === "Jogando"
+          ? svg(HX("path", { d: "M8 5.2v13.6L19 12z", fill: "currentColor" }))
+          : s === "Pausado"
+            ? svg(HX("rect", { x: 6, y: 5, width: 4.2, height: 14, rx: 1, fill: "currentColor" }), HX("rect", { x: 13.8, y: 5, width: 4.2, height: 14, rx: 1, fill: "currentColor" }))
+            : s === "N\xE3o Iniciado"
+              ? svg(HX("circle", { cx: 12, cy: 12, r: 5, fill: "none", stroke: "currentColor", strokeWidth: 3 }))
+              : null;
+}
+// ---- capa (capsule) da biblioteca: arte 2:3, etiqueta da plataforma, nota, círculo de status e pílula de data ----
+function GameCapsule({ m, w, onOpen, onHover, preview }) {
   let st = gmSt(m.status),
     pl = gmPlat(m.platform),
     name = String(m.name || "").trim() || "Sem nome",
-    acc = mdAccent(name),
     cover = gmCoverOk(m.cover) ? m.cover : "",
-    pad = w < 110 ? 2.5 : 3,
-    padB = pad + 2.5, // base mais grossa = trilho do LED
-    band = Math.max(12, Math.round(h * 0.1)), // tarja da plataforma
+    hue = gmHue(name),
     hl = gmNum(m.hltb),
     tm = gmNum(m.time),
     pct = hl > 0 ? Math.min(100, Math.round((tm / hl) * 100)) : 0,
-    // título horizontal da capa genérica: cabe a maior palavra na largura; até 4 linhas
-    innerW = w - pad * 2 - 14,
-    words = name.split(/\s+/),
-    longest = Math.max(1, ...words.map((x) => x.length)),
-    fsMax = 15 * Math.min(1, w / 128),
-    fit = (fs) => Math.ceil((name.length * fs * 0.62) / innerW) <= 4,
-    fs = Math.max(8, Math.min(fsMax, innerW / (longest * 0.62)));
-  for (; fs > 8 && !fit(fs); ) fs -= 0.5;
+    small = w < 150,
+    date = gmSteamDate(m.date, small),
+    // título da capa genérica: a maior palavra cabe na largura, até 4 linhas
+    innerW = Math.max(40, w - 22),
+    longest = Math.max(1, ...name.split(/\s+/).map((x) => x.length)),
+    fsMax = Math.min(34, w * 0.16),
+    fit = (fs) => Math.ceil((name.length * fs * 0.58) / innerW) <= 4,
+    fs = Math.max(10, Math.min(fsMax, innerW / (longest * 0.6)));
+  for (; fs > 10 && !fit(fs); ) fs -= 0.5;
   fs = Math.round(fs * 10) / 10;
-  let meta = [pl.label, m.genre].filter(Boolean).join(" \xB7 "),
-    prog = hl > 0 ? `${gmHrs(tm)} de ${gmHrs(hl)} (${pct}%)` : tm > 0 ? `${gmHrs(tm)} jogadas` : "",
-    tag = preview ? "div" : "button";
+  let prog = hl > 0 ? `${gmHrs(tm)} de ${gmHrs(hl)} (${pct}%)` : tm > 0 ? `${gmHrs(tm)} jogadas` : "",
+    circ = small ? 18 : 22,
+    tag = preview ? "div" : "button",
+    hov = (on) => (ev) => onHover && onHover(on ? m.id : null, on ? ev.currentTarget : null, ev.type);
   return HX(
     tag,
     {
@@ -12913,170 +12958,295 @@ function GameCase({ m, w, h, onOpen, preview }) {
         : {
             type: "button",
             onClick: () => onOpen(m.id),
-            title: `${name} \xB7 ${pl.label}${m.genre ? ` \xB7 ${m.genre}` : ""} \xB7 ${st.label}`,
+            onMouseEnter: hov(!0),
+            onMouseMove: hov(!0), // depois de rolar a página, mexer o mouse traz o cartão de volta
+            onMouseLeave: hov(!1),
+            onFocus: hov(!0),
+            onBlur: hov(!1),
             "aria-label": `${name}, ${pl.label}, ${st.label}${m.rating ? `, nota ${m.rating}` : ""}${prog ? `, ${prog}` : ""}. Abrir para editar`,
             "data-game": !0,
             "data-game-id": m.id,
           }),
       "data-game-cover": cover ? "1" : "0",
       "data-game-plat": pl.k,
-      className: `group/game relative block shrink-0 overflow-hidden rounded-[6px] text-left shadow-[inset_0_0_0_1px_rgba(255,255,255,.16),inset_0_1px_0_rgba(255,255,255,.22),2px_4px_10px_rgba(0,0,0,.65)] transition-all duration-200 ease-out ${
+      className: `group/cap relative block aspect-[2/3] w-full overflow-hidden rounded-[3px] bg-[#16202d] text-left shadow-[0_6px_16px_rgba(0,0,0,.45)] transition-[transform,box-shadow,filter] duration-200 ease-out ${
         preview
           ? ""
-          : "cursor-pointer hover:z-10 hover:-translate-y-3 hover:shadow-[inset_0_0_0_1px_rgba(165,243,252,.9),0_0_16px_3px_rgba(34,211,238,.55),0_12px_20px_rgba(0,0,0,.7)] focus-visible:z-10 focus-visible:-translate-y-3 focus-visible:shadow-[inset_0_0_0_1px_rgba(165,243,252,.9),0_0_16px_3px_rgba(34,211,238,.55)] focus-visible:outline-none motion-reduce:hover:translate-y-0"
+          : "cursor-pointer hover:z-10 hover:scale-[1.035] hover:shadow-[0_16px_32px_rgba(0,0,0,.6)] hover:brightness-110 focus-visible:z-10 focus-visible:scale-[1.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a9fff] focus-visible:ring-offset-2 focus-visible:ring-offset-[#2d333c] motion-reduce:hover:scale-100"
       }`,
-      style: { width: w, height: h, background: pl.plastic },
     },
-    // encarte (capa) dentro do plástico
+    // arte genérica (fica por baixo da imagem: se o link falhar, ela aparece)
     HX(
       "span",
-      { className: "absolute overflow-hidden rounded-[4px] bg-zinc-950", style: { top: pad, left: pad, right: pad, bottom: padB } },
-      // arte: imagem enviada ou capa genérica com o nome
-      HX(
-        "span",
-        { className: "absolute inset-x-0 bottom-0", style: { top: band } },
-        cover
-          ? HX("span", { className: "absolute inset-0 bg-cover bg-center", style: { backgroundImage: `url("${cover}")` } })
-          : HX(
-              "span",
-              {
-                className: "absolute inset-0 flex flex-col items-center justify-center overflow-hidden px-[7px] pb-4 pt-5",
-                style: {
-                  background: `repeating-linear-gradient(135deg,rgba(255,255,255,.028) 0 2px,transparent 2px 9px),radial-gradient(circle at 78% 82%,${acc}40 0%,transparent 55%),linear-gradient(165deg,${pl.deep} 0%,#07080c 62%,${acc}26 100%)`,
-                },
-              },
-              HX(Xo, {
-                "aria-hidden": "true",
-                size: Math.round(w * 0.62),
-                strokeWidth: 1.2,
-                className: "pointer-events-none absolute -bottom-3 -right-4 -rotate-12",
-                style: { color: acc, opacity: 0.1 },
-              }),
-              HX(
-                "span",
-                {
-                  className: "relative line-clamp-4 w-full break-words text-center font-bold uppercase leading-[1.08] tracking-[0.03em]",
-                  style: { color: acc, fontSize: fs, textShadow: `0 0 8px ${acc}99` },
-                  "data-game-title": !0,
-                },
-                name,
-              ),
-              m.genre &&
-                HX(
-                  "span",
-                  { className: "relative mt-1.5 w-full truncate text-center text-[8px] font-semibold uppercase leading-[1.4] tracking-[0.14em] text-zinc-400" },
-                  m.genre,
-                ),
-            ),
-      ),
-      // tarja da plataforma (impressa no encarte, como nas caixas de console)
+      {
+        className: "absolute inset-0 flex flex-col items-center justify-center overflow-hidden px-[11px] pb-9 pt-8",
+        style: {
+          background: `radial-gradient(120% 70% at 50% 0%,hsla(${hue},60%,62%,.24) 0%,transparent 62%),radial-gradient(90% 60% at 100% 100%,hsla(${(hue + 40) % 360},60%,45%,.2) 0%,transparent 70%),linear-gradient(165deg,hsl(${hue} 34% 24%) 0%,hsl(${(hue + 20) % 360} 40% 13%) 55%,hsl(${(hue + 40) % 360} 45% 7%) 100%)`,
+        },
+      },
+      HX(Xo, {
+        "aria-hidden": "true",
+        size: Math.round(w * 0.78),
+        strokeWidth: 1,
+        className: "pointer-events-none absolute -bottom-[8%] left-1/2 -translate-x-1/2",
+        style: { color: "#fff", opacity: 0.05 },
+      }),
       HX(
         "span",
         {
-          "data-game-band": pl.k,
-          className: "pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between gap-1 overflow-hidden px-1.5",
-          style: { height: band, background: pl.band, color: pl.ink, boxShadow: "inset 0 -1px 0 rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.28)" },
+          className: "relative line-clamp-4 w-full break-words text-center font-bold uppercase leading-[1.02] tracking-[0.02em]",
+          style: { fontFamily: "Rajdhani,system-ui,sans-serif", fontSize: fs, color: `hsl(${hue} 35% 95%)`, textShadow: "0 2px 12px rgba(0,0,0,.6)" },
+          "data-game-title": !0,
         },
+        name,
+      ),
+      HX("span", { "aria-hidden": "true", className: "relative mt-2 h-[2px] w-8 rounded-full", style: { background: `hsl(${hue} 75% 62%)`, boxShadow: `0 0 8px hsl(${hue} 75% 55%)` } }),
+      m.genre &&
+        HX(
+          "span",
+          { className: "relative mt-1.5 w-full truncate text-center text-[9.5px] font-semibold uppercase leading-[1.4] tracking-[0.16em]", style: { color: `hsla(${hue},30%,86%,.72)` } },
+          m.genre,
+        ),
+    ),
+    cover && HX("span", { className: "absolute inset-0 bg-cover bg-center", style: { backgroundImage: `url("${cover}")` } }),
+    // brilho no hover (como a capa "acendendo" na Steam)
+    HX("span", {
+      "aria-hidden": "true",
+      className: "pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover/cap:opacity-100 group-focus-visible/cap:opacity-100",
+      style: { background: "linear-gradient(135deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 45%)" },
+    }),
+    // plataforma (azul = PlayStation · cinza/preta = PC …)
+    pl.k !== "none" &&
+      HX(
+        "span",
+        { "data-game-band": pl.k, className: "pointer-events-none absolute left-[6px] top-[6px] flex max-w-[calc(100%-54px)] items-center gap-1" },
         HX(
           "span",
           {
-            className: "truncate font-orbit font-black italic leading-[1.3]",
-            style: { fontSize: Math.max(7, Math.round(band * 0.56 * 10) / 10), letterSpacing: pl.label.length > 6 ? "0.04em" : "0.1em" },
+            className: `truncate rounded-[2px] px-1.5 font-bold uppercase leading-[1.55] tracking-[0.06em] shadow-[0_1px_4px_rgba(0,0,0,.55)] ring-1 ring-white/10 ${small ? "text-[8.5px]" : "text-[10px]"}`,
+            style: { background: pl.chip, color: pl.ink, fontFamily: GM_FONT },
           },
           pl.label,
         ),
         pl.retro &&
           HX(
             "span",
-            { className: "shrink-0 rounded-[2px] border px-[3px] text-[6.5px] font-bold uppercase leading-[1.35] tracking-[0.12em]", style: { borderColor: `${pl.ink}88` } },
+            { className: "shrink-0 rounded-[2px] bg-black/70 px-1 text-[8px] font-bold uppercase leading-[1.6] tracking-[0.1em] text-amber-300", style: { fontFamily: GM_FONT } },
             "Retro",
           ),
-      ),
-    ),
-    // dobradiça e reflexo do plástico
-    HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute w-[5px] rounded-bl-[4px] bg-gradient-to-r from-black/70 to-black/5", style: { top: pad + band, left: pad, bottom: padB } }),
-    HX("span", {
-      "aria-hidden": "true",
-      className: "pointer-events-none absolute inset-0 rounded-[6px]",
-      style: { background: "linear-gradient(115deg,rgba(255,255,255,.17) 0%,rgba(255,255,255,.04) 30%,rgba(255,255,255,0) 44%)" },
-    }),
-    // troféu de platina
-    st.trophy &&
-      HX(
-        "span",
-        {
-          className: "pointer-events-none absolute z-10 flex items-center justify-center rounded-[3px] bg-black/75 p-[3px] text-cyan-50 ring-1 ring-cyan-200/70",
-          style: { top: pad + band + 4, left: pad + 6, boxShadow: "0 0 8px rgba(165,243,252,.85)" },
-          "data-game-trophy": !0,
-          title: "Platinado",
-        },
-        HX(Sr, { size: w < 110 ? 11 : 13, strokeWidth: 2.2 }),
       ),
     // nota (SSS … E-)
     m.rating &&
       HX(
         "span",
         {
-          className: `pointer-events-none absolute z-10 rounded-[3px] bg-black/80 px-1 py-px font-orbit text-[9px] font-bold leading-tight ring-1 ${gmTop(m.rating) ? "text-yellow-300 ring-yellow-400/50" : "text-cyan-200 ring-cyan-400/40"}`,
-          style: { top: pad + band + 4, right: pad + 4 },
+          className: `pointer-events-none absolute right-[6px] top-[6px] rounded-[2px] bg-black/75 px-1.5 font-bold leading-[1.55] shadow-[0_1px_4px_rgba(0,0,0,.55)] ${small ? "text-[9px]" : "text-[11px]"} ${gmTop(m.rating) ? "text-[#ffd24a]" : "text-[#66c0f4]"}`,
+          style: { fontFamily: GM_FONT, textShadow: gmTop(m.rating) ? "0 0 8px rgba(255,210,74,.6)" : "none" },
           "data-game-grade": m.rating,
         },
         m.rating,
       ),
-    // ficha que sobe no hover/foco
-    !preview &&
+    // barra de progresso (tempo atual / how long to beat), como a barra de download da Steam
+    hl > 0 &&
+      tm > 0 &&
       HX(
         "span",
-        {
-          className:
-            "pointer-events-none absolute translate-y-full overflow-hidden rounded-b-[4px] bg-gradient-to-t from-black via-black/95 to-black/75 px-2 pb-2.5 pt-4 opacity-0 transition-all duration-200 group-hover/game:translate-y-0 group-hover/game:opacity-100 group-focus-visible/game:translate-y-0 group-focus-visible/game:opacity-100",
-          style: { left: pad, right: pad, bottom: padB },
-        },
-        HX("span", { className: "block text-[11px] font-bold uppercase leading-tight tracking-wide text-zinc-100 [overflow-wrap:anywhere] line-clamp-2" }, name),
-        HX("span", { className: "mt-0.5 block truncate text-[10px] font-semibold uppercase leading-tight tracking-wider text-sky-300" }, meta),
-        prog &&
-          HX(
-            "span",
-            { className: "mt-1 block" },
-            HX("span", { className: "block text-[10px] leading-tight text-zinc-300" }, prog),
-            hl > 0 &&
-              HX(
-                "span",
-                { className: "mt-0.5 block h-[3px] overflow-hidden rounded-full bg-white/10" },
-                HX("span", { className: "block h-full rounded-full", style: { width: `${pct}%`, background: st.led === "#3f3f46" ? "#22d3ee" : st.led } }),
-              ),
-          ),
-        (m.rating || m.difficulty) &&
-          HX("span", { className: "mt-0.5 block truncate text-[10px] leading-tight text-zinc-400" }, [m.rating && `Nota ${m.rating}`, m.difficulty].filter(Boolean).join(" \xB7 ")),
-        m.date && HX("span", { className: "block text-[10px] leading-tight text-zinc-500" }, `Conclus\xE3o ${gmDate(m.date)}`),
-        HX("span", { className: "mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.18em]", style: { color: st.text } }, st.label),
+        { "aria-hidden": "true", "data-game-bar": pct, className: "pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-black/60" },
+        HX("span", { className: "block h-full", style: { width: `${pct}%`, background: pct >= 100 ? "#59bf40" : "#1a9fff", boxShadow: "0 0 6px rgba(26,159,255,.6)" } }),
       ),
-    // LED de status na base
-    HX("span", {
-      "aria-hidden": "true",
-      className: `pointer-events-none absolute inset-x-[9px] bottom-[1.5px] z-20 h-[2px] rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
-      style: { background: st.led, opacity: m.status ? 0.95 : 0.5, boxShadow: st.glow },
-    }),
-    HX("span", {
-      "aria-hidden": "true",
-      "data-game-led": m.status || "none",
-      className: `pointer-events-none absolute z-20 h-[7px] w-[7px] rounded-full ring-1 ring-black/80 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
-      style: { background: st.led, boxShadow: st.glow, bottom: padB + 3, right: pad + 3 },
-    }),
+    // rodapé: círculo de status (esquerda) + pílula de data (centro)
+    (m.status || date) &&
+      HX(
+        "span",
+        { className: "pointer-events-none absolute inset-x-[6px] bottom-[7px] flex items-end", style: { fontFamily: GM_FONT } },
+        m.status
+          ? HX(
+              "span",
+              {
+                "data-game-led": m.status,
+                "data-game-trophy": st.trophy ? !0 : void 0,
+                title: st.label,
+                className: `flex shrink-0 items-center justify-center rounded-full border-[1.5px] bg-black/75 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+                style: { width: circ, height: circ, borderColor: st.led, color: st.led, boxShadow: st.glow },
+              },
+              HX(GmStIcon, { s: m.status, size: small ? 10 : 12 }),
+            )
+          : HX("span", { className: "shrink-0", style: { width: date ? circ : 0 } }),
+        HX(
+          "span",
+          { className: "flex min-w-0 flex-1 justify-center px-1" },
+          date &&
+            HX(
+              "span",
+              {
+                "data-game-date": m.date,
+                className: `truncate whitespace-nowrap rounded-[2px] bg-[#3d4450] px-2 leading-[1.5] text-white shadow-[0_1px_4px_rgba(0,0,0,.5)] ${small ? "text-[10px]" : "text-[12px]"}`,
+              },
+              date,
+            ),
+        ),
+        // capas grandes: espaço igual ao do círculo à direita, para a pílula ficar centralizada (como na Steam)
+        !small && HX("span", { className: "shrink-0", style: { width: circ } }),
+      ),
   );
 }
-// ---- modal de edição: TODOS os campos da tabela antiga ----
+// ---- espaço "+ Adicionar jogo" (primeiro da grade: jogo novo entra no começo) ----
+function GameAddTile({ onAdd }) {
+  return HX(
+    "button",
+    {
+      type: "button",
+      onClick: onAdd,
+      "data-game-add": !0,
+      "aria-label": "Adicionar jogo",
+      className:
+        "group/add flex aspect-[2/3] w-full flex-col items-center justify-center gap-2 rounded-[3px] border-2 border-dashed border-[#4b5563] bg-white/[0.02] text-[#8b929a] transition-all duration-200 hover:border-[#1a9fff] hover:bg-[#1a9fff]/10 hover:text-white focus-visible:border-[#1a9fff] focus-visible:text-white focus-visible:outline-none",
+      style: { fontFamily: GM_FONT },
+    },
+    HX("span", { className: "flex h-11 w-11 items-center justify-center rounded-full bg-[#3d4450] text-white transition-colors group-hover/add:bg-[#1a9fff]" }, HX(gt, { size: 22, strokeWidth: 2.5 })),
+    HX("span", { className: "px-2 text-center text-[12px] font-medium" }, "Adicionar jogo"),
+  );
+}
+// ---- grade da biblioteca: colunas calculadas pela largura e pelo tamanho escolhido ----
+function GamesGrid({ items, onOpen, onAdd, showAdd, zoom, onHover }) {
+  let ref = (0, K.useRef)(null),
+    [cw, setCw] = (0, K.useState)(0);
+  (0, K.useLayoutEffect)(() => {
+    let el = ref.current;
+    if (!el) return;
+    let upd = () => setCw(el.clientWidth);
+    upd();
+    let ro = typeof ResizeObserver != "undefined" ? new ResizeObserver(upd) : null;
+    return (
+      ro ? ro.observe(el) : window.addEventListener("resize", upd),
+      () => {
+        ro ? ro.disconnect() : window.removeEventListener("resize", upd);
+      }
+    );
+  }, []);
+  let min = GM_ZOOM[zoom] || GM_ZOOM[3],
+    gapX = Math.round(Math.max(12, Math.min(34, min * 0.16))),
+    gapY = Math.round(gapX * 0.9),
+    cols = Math.max(2, Math.floor((cw + gapX) / (min + gapX))),
+    tileW = cw > 0 ? (cw - gapX * (cols - 1)) / cols : min;
+  return HX(
+    "div",
+    {
+      ref,
+      className: "grid",
+      style: { gridTemplateColumns: `repeat(${cols},minmax(0,1fr))`, columnGap: gapX, rowGap: gapY },
+      "data-games-shelf": !0,
+      "data-cols": cols,
+    },
+    cw > 0 && showAdd && HX(GameAddTile, { key: "__add", onAdd }),
+    ...(cw > 0 ? items.map((m) => HX(GameCapsule, { key: m.id, m, w: tileW, onOpen, onHover })) : []),
+  );
+}
+// ---- cartão que aparece ao passar o mouse (como a ficha da biblioteca da Steam) ----
+function GameHoverCard({ g, rect }) {
+  let ref = (0, K.useRef)(null),
+    W = 272,
+    [top, setTop] = (0, K.useState)(rect.top),
+    vw = window.innerWidth,
+    right = rect.right + 12 + W <= vw - 8,
+    left = right ? rect.right + 12 : Math.max(8, rect.left - 12 - W),
+    st = gmSt(g.status),
+    pl = gmPlat(g.platform),
+    hl = gmNum(g.hltb),
+    tm = gmNum(g.time),
+    pct = hl > 0 ? Math.min(100, Math.round((tm / hl) * 100)) : 0,
+    row = (label, value, extra) =>
+      HX(
+        "div",
+        { className: "flex items-baseline justify-between gap-3 py-[3px]" },
+        HX("span", { className: "shrink-0 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[#8b929a]" }, label),
+        HX("span", { className: "min-w-0 truncate text-right text-[12.5px] text-[#dcdedf]", ...(extra || {}) }, value),
+      );
+  (0, K.useLayoutEffect)(() => {
+    let h = ref.current ? ref.current.offsetHeight : 200;
+    setTop(Math.max(8, Math.min(window.innerHeight - h - 8, rect.top)));
+  }, [rect.top, g.id]);
+  return HX(
+    "div",
+    {
+      ref,
+      role: "tooltip",
+      "data-game-card": g.id,
+      className: "fade-in pointer-events-none fixed z-[60] rounded-[4px] border border-[#3d4450] p-3 shadow-[0_14px_36px_rgba(0,0,0,.65)]",
+      style: { left, top, width: W, fontFamily: GM_FONT, background: "linear-gradient(180deg,#2b3240 0%,#1f242d 100%)" },
+    },
+    HX("div", { className: "text-[15px] font-semibold leading-snug text-white [overflow-wrap:anywhere]" }, String(g.name || "").trim() || "Sem nome"),
+    HX("div", { className: "mt-0.5 truncate text-[12px] text-[#8b929a]" }, [pl.label, g.genre].filter(Boolean).join(" \xB7 ")),
+    HX("div", { className: "my-2 h-px bg-white/10" }),
+    row("Tempo de jogo", hl > 0 ? `${gmHrs(tm)} de ${gmHrs(hl)}` : tm > 0 ? gmHrs(tm) : "—"),
+    hl > 0 &&
+      HX(
+        "div",
+        { className: "mb-1 flex items-center gap-2" },
+        HX(
+          "div",
+          { className: "h-[5px] flex-1 overflow-hidden rounded-full bg-black/40" },
+          HX("div", { className: "h-full rounded-full", style: { width: `${pct}%`, background: pct >= 100 ? "#59bf40" : "#1a9fff" } }),
+        ),
+        HX("span", { className: "text-[11px] text-[#66c0f4]" }, `${pct}%`),
+      ),
+    row("Conclus\xE3o", gmSteamDate(g.date) || "—"),
+    row("Nota", g.rating || "—", g.rating ? { style: { color: gmTop(g.rating) ? "#ffd24a" : "#66c0f4", fontWeight: 700 } } : void 0),
+    row("Dificuldade", g.difficulty || "—"),
+    HX(
+      "div",
+      { className: "flex items-center justify-between gap-3 py-[3px]" },
+      HX("span", { className: "text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[#8b929a]" }, "Status"),
+      HX(
+        "span",
+        { className: "flex items-center gap-1.5 text-[12.5px] font-semibold", style: { color: st.text } },
+        HX("span", { className: "h-2 w-2 rounded-full", style: { background: st.led, boxShadow: st.glow } }),
+        st.label,
+      ),
+    ),
+  );
+}
+// ---- botão-pílula de filtro no estilo Steam (com o LED do status) ----
+function GmPill({ on, onClick, st, children, count, label }) {
+  return HX(
+    "button",
+    {
+      type: "button",
+      onClick,
+      "aria-pressed": on,
+      "aria-label": label,
+      className: `flex shrink-0 items-center gap-2 rounded-[2px] px-3 py-1.5 text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a9fff] ${
+        on ? "bg-[#1a9fff] text-white shadow-[0_0_12px_rgba(26,159,255,.35)]" : "bg-[#3d4450] text-[#c7d5e0] hover:bg-[#4b5566] hover:text-white"
+      }`,
+    },
+    st && HX("span", { className: `h-2 w-2 shrink-0 rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`, style: { background: st.led, boxShadow: on ? "none" : st.glow } }),
+    children,
+    HX("span", { className: on ? "text-white/80" : "text-[#8b929a]" }, count),
+  );
+}
+// ---- modal de edição no estilo da página de jogo da Steam: TODOS os campos da tabela antiga ----
 function GameModal({ item, onSave, onDelete, onClose }) {
   let edit = !!item,
     [f, setF] = (0, K.useState)(() => ({ ...Tie(), ...(item || {}) })),
     [err, setErr] = (0, K.useState)(""),
     [delAsk, setDelAsk] = (0, K.useState)(!1),
+    [busy, setBusy] = (0, K.useState)(!1),
+    fileRef = (0, K.useRef)(null),
     set = (k, v) => (setF((o) => ({ ...o, [k]: v })), setErr("")),
     hl = gmNum(f.hltb),
     tm = gmNum(f.time),
+    pct = hl > 0 ? Math.min(100, Math.round((tm / hl) * 100)) : 0,
+    st = gmSt(f.status),
+    pl = gmPlat(f.platform),
+    name = String(f.name || "").trim(),
+    cover = gmCoverOk(f.cover) ? f.cover : "",
+    hue = gmHue(name || "Novo jogo"),
+    coverUrl = /^https?:/i.test(String(f.cover || "")) ? f.cover : "",
     save = () => {
-      let name = String(f.name || "").trim();
       if (!name) return setErr("D\xEA um nome ao jogo.");
+      let cv = String(f.cover || "").trim();
+      // capa nova (enviada ou colada) precisa ser uma imagem válida; capa antiga intocada é mantida como está
+      if (cv && cv !== (item ? item.cover : "") && !gmCoverOk(cv)) return setErr("Link da capa inv\xE1lido (use um endere\xE7o http/https de imagem).");
       (onSave({
         name: name.slice(0, 160),
         genre: String(f.genre || "").slice(0, 160),
@@ -13087,27 +13257,42 @@ function GameModal({ item, onSave, onDelete, onClose }) {
         date: /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? f.date : "",
         rating: Z8.includes(f.rating) ? f.rating : "",
         difficulty: Q8.includes(f.difficulty) ? f.difficulty : "",
-        cover: f.cover,
+        cover: cv,
       }),
         onClose());
     },
-    lbl = HLBL,
-    sel = `${HIN} cursor-pointer [&>option]:bg-zinc-950 [&>option]:text-cyan-100`,
+    pick = async (ev) => {
+      let file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      (setErr(""), setBusy(!0));
+      try {
+        set("cover", await Ale(file, { maxDim: 360, quality: 0.82 }));
+      } catch (e) {
+        setErr(e && e.message ? e.message : "Falha ao ler a imagem");
+      } finally {
+        setBusy(!1);
+        try {
+          ev.target.value = "";
+        } catch {}
+      }
+    },
+    lbl = "mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8b929a]",
+    inp = "w-full min-w-0 rounded-[2px] border border-[#3d4450] bg-[#1b2029] px-2.5 py-2 text-[14px] text-[#dcdedf] placeholder-[#5c6470] transition-colors [color-scheme:dark] focus:border-[#1a9fff] focus:outline-none",
+    sel = `${inp} cursor-pointer [&>option]:bg-[#1b2029] [&>option]:text-[#dcdedf]`,
     txt = (key, label, extra) =>
       HX(
         "label",
-        { className: "block" },
+        { className: "block min-w-0" },
         HX("span", { className: lbl }, label),
-        HX("input", {
-          type: "text",
-          "aria-label": label,
-          value: f[key] || "",
-          onChange: (ev) => set(key, ev.target.value),
-          className: HIN,
-          ...(extra || {}),
-        }),
+        HX("input", { type: "text", "aria-label": label, value: f[key] || "", onChange: (ev) => set(key, ev.target.value), className: inp, ...(extra || {}) }),
       ),
-    st = gmSt(f.status);
+    info = (label, value, color) =>
+      HX(
+        "div",
+        { className: "min-w-0" },
+        HX("div", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b929a]" }, label),
+        HX("div", { className: "truncate text-[14px] text-[#dcdedf]", style: color ? { color } : void 0 }, value),
+      );
   (0, K.useEffect)(() => {
     let k = (ev) => {
       ev.key === "Escape" && onClose();
@@ -13117,179 +13302,276 @@ function GameModal({ item, onSave, onDelete, onClose }) {
   return HX(
     "div",
     {
-      className: "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6",
+      className: "fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6",
       role: "dialog",
       "aria-modal": "true",
       "aria-label": edit ? "Editar jogo" : "Novo jogo",
       "data-game-modal": !0,
+      style: { fontFamily: GM_FONT },
     },
-    HX("button", { type: "button", className: "fade-in absolute inset-0 cursor-default bg-black/75 backdrop-blur-[3px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX("button", { type: "button", className: "fade-in absolute inset-0 cursor-default bg-black/75 backdrop-blur-[2px]", onClick: onClose, "aria-label": "Fechar" }),
     HX(
       "div",
-      { className: "pop-in relative max-h-full w-full max-w-2xl overflow-y-auto" },
-      HX("div", { className: "absolute inset-0 bg-cyan-400/80", style: { clipPath: it } }),
-      HX("div", { className: "absolute bg-[#0b0d14]/95", style: { inset: 1.5, clipPath: it } }),
+      { className: "pop-in relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[4px] bg-[#1b2838] shadow-[0_24px_80px_rgba(0,0,0,.75)] ring-1 ring-white/10" },
       HX(
         "div",
-        { className: "relative p-5" },
+        { className: "min-h-0 flex-1 overflow-y-auto" },
+        // topo: arte desfocada ao fundo + capa + título (como a página do jogo na biblioteca)
         HX(
           "div",
-          { className: "flex items-start justify-between gap-3 border-b border-cyan-900/60 pb-3" },
-          HX(
-            "div",
-            {},
-            HX("div", { className: "text-[9px] tracking-[0.35em] text-cyan-500/80" }, "BACKLOG//ESTANTE"),
-            HX("h2", { className: "text-xl font-bold uppercase tracking-[0.12em] text-yellow-400" }, edit ? "Editar jogo" : "Novo jogo"),
-          ),
+          { className: "relative h-[176px] overflow-hidden sm:h-[196px]" },
+          HX("div", {
+            "aria-hidden": "true",
+            className: "absolute inset-0 scale-125",
+            style: cover
+              ? { backgroundImage: `url("${cover}")`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(22px) brightness(.55) saturate(1.25)" }
+              : { background: `linear-gradient(120deg,hsl(${hue} 45% 26%) 0%,hsl(${(hue + 30) % 360} 50% 13%) 60%,#1b2838 100%)` },
+          }),
+          HX("div", { "aria-hidden": "true", className: "absolute inset-0 bg-gradient-to-t from-[#1b2838] via-[#1b2838]/45 to-transparent" }),
           HX(
             "button",
-            { type: "button", onClick: onClose, "aria-label": "Fechar", className: "p-1.5 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" },
+            {
+              type: "button",
+              onClick: onClose,
+              "aria-label": "Fechar",
+              className: "absolute right-2 top-2 z-10 rounded-[2px] p-1.5 text-[#c7d5e0] transition-colors hover:bg-white/10 hover:text-white",
+            },
             HX(Da, { size: 20 }),
           ),
-        ),
-        HX(
-          "div",
-          { className: "mt-4 flex flex-col gap-5 sm:flex-row" },
-          // prévia ao vivo da caixa
           HX(
             "div",
-            { className: "flex shrink-0 flex-col items-center gap-2 sm:w-[150px]", "data-game-preview": !0 },
+            { className: "absolute inset-x-0 bottom-0 flex items-end gap-4 px-4 pb-4 sm:px-6" },
+            HX("div", { className: "w-[86px] shrink-0 sm:w-[104px]", "data-game-preview": !0 }, HX(GameCapsule, { m: f, w: 104, preview: !0 })),
             HX(
               "div",
-              { className: "flex items-end justify-center border-b-4 border-zinc-800 px-3 pt-3 shadow-[0_4px_10px_rgba(0,0,0,0.5)]" },
-              HX(GameCase, { m: f, w: 128, h: 163, preview: !0 }),
+              { className: "min-w-0 flex-1 pb-1" },
+              HX("div", { className: "text-[11px] font-semibold uppercase tracking-[0.2em] text-[#66c0f4]" }, edit ? "Editar jogo" : "Adicionar jogo"),
+              HX("h2", { className: "truncate text-[24px] font-light leading-tight text-white sm:text-[30px]" }, name || "Novo jogo"),
+              HX("div", { className: "truncate text-[13px] text-[#8b929a]" }, [pl.label, f.genre].filter(Boolean).join(" \xB7 ")),
             ),
-            HX("span", { className: "text-[9px] uppercase tracking-[0.25em] text-zinc-500" }, "Pr\xE9-visualiza\xE7\xE3o"),
+          ),
+        ),
+        // faixa de informações (ao vivo)
+        HX(
+          "div",
+          { className: "grid grid-cols-2 gap-x-4 gap-y-2 border-y border-black/30 bg-black/20 px-4 py-3 sm:grid-cols-4 sm:px-6", "data-game-infobar": !0 },
+          info("Tempo de jogo", hl > 0 ? `${gmHrs(tm)} de ${gmHrs(hl)}` : tm > 0 ? gmHrs(tm) : "—"),
+          info("Conclus\xE3o", gmSteamDate(f.date) || "—"),
+          info("Nota", f.rating || "—", f.rating ? (gmTop(f.rating) ? "#ffd24a" : "#66c0f4") : void 0),
+          HX(
+            "div",
+            { className: "min-w-0" },
+            HX("div", { className: "text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b929a]" }, "Status"),
             HX(
-              "span",
-              { className: "flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]", style: { color: st.text } },
+              "div",
+              { className: "flex items-center gap-1.5 text-[14px] font-semibold", style: { color: st.text } },
               HX("span", { className: `h-2 w-2 rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`, style: { background: st.led, boxShadow: st.glow } }),
               st.label,
             ),
           ),
-          HX(
-            "div",
-            { className: "grid min-w-0 flex-1 grid-cols-2 gap-x-3 gap-y-3" },
-            HX(
-              "label",
-              { className: "col-span-2 block" },
-              HX("span", { className: lbl }, "Nome do jogo"),
-              HX("input", {
-                autoFocus: !0,
-                type: "text",
-                "aria-label": "Nome do jogo",
-                value: f.name,
-                maxLength: 160,
-                placeholder: "Ex.: Cyberpunk 2077",
-                onChange: (ev) => set("name", ev.target.value),
-                onKeyDown: (ev) => {
-                  ev.key === "Enter" && save();
-                },
-                className: `${HIN} font-semibold text-yellow-200`,
-              }),
-            ),
-            txt("genre", "G\xEAnero / Tipo", { maxLength: 160, placeholder: "Ex.: Survival horror" }),
-            txt("platform", "Plataforma", { maxLength: 40, list: "gm-plat-list", placeholder: "PS5, PC, Switch…" }),
-            HX("datalist", { id: "gm-plat-list" }, ...Mie.map((o) => HX("option", { key: o, value: o }))),
-            txt("hltb", "How long to beat (h)", { inputMode: "decimal", maxLength: 8, placeholder: "—", className: `${HIN} font-orbit` }),
-            txt("time", "Tempo atual (h)", { inputMode: "decimal", maxLength: 8, placeholder: "—", className: `${HIN} font-orbit` }),
-            hl > 0 &&
-              HX(
-                "div",
-                { className: "col-span-2 -mt-1", "data-game-progress": !0 },
-                HX(
-                  "div",
-                  { className: "flex justify-between text-[11px] text-zinc-500" },
-                  HX("span", {}, `Progresso: ${gmHrs(tm)} de ${gmHrs(hl)}`),
-                  HX("span", { className: "font-orbit text-cyan-300" }, `${Math.min(100, Math.round((tm / hl) * 100))}%`),
-                ),
-                HX(
-                  "div",
-                  { className: "mt-1 h-1 overflow-hidden rounded-full bg-white/10" },
-                  HX("div", { className: "h-full rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,.8)]", style: { width: `${Math.min(100, (tm / hl) * 100)}%` } }),
-                ),
-              ),
-            HX(
-              "label",
-              { className: "block" },
-              HX("span", { className: lbl }, "Status"),
-              HX(
-                "select",
-                { "aria-label": "Status do jogo", value: f.status || "", onChange: (ev) => set("status", ev.target.value), className: `${sel} font-semibold uppercase tracking-wider`, style: { color: st.text } },
-                HX("option", { value: "" }, "—"),
-                ...p2.map((o) => HX("option", { key: o, value: o }, o)),
-              ),
-            ),
-            HX(
-              "label",
-              { className: "block" },
-              HX("span", { className: lbl }, "Data de conclus\xE3o"),
-              HX("input", {
-                type: "date",
-                "aria-label": "Data de conclus\xE3o",
-                value: f.date || "",
-                onChange: (ev) => set("date", ev.target.value),
-                className: `${HIN} font-orbit text-[12px]`,
-              }),
-            ),
-            HX(
-              "label",
-              { className: "block" },
-              HX("span", { className: lbl }, "Nota"),
-              HX(
-                "select",
-                {
-                  "aria-label": "Nota",
-                  value: f.rating || "",
-                  onChange: (ev) => set("rating", ev.target.value),
-                  className: `${sel} font-orbit font-bold`,
-                  style: { color: gmTop(f.rating) ? "#facc15" : f.rating ? "#67e8f9" : void 0 },
-                },
-                HX("option", { value: "" }, "—"),
-                ...Z8.map((o) => HX("option", { key: o, value: o }, o)),
-              ),
-            ),
-            HX(
-              "label",
-              { className: "block" },
-              HX("span", { className: lbl }, "Dificuldade"),
-              HX(
-                "select",
-                { "aria-label": "Dificuldade", value: f.difficulty || "", onChange: (ev) => set("difficulty", ev.target.value), className: `${sel} uppercase tracking-wide` },
-                HX("option", { value: "" }, "—"),
-                ...Q8.map((o) => HX("option", { key: o, value: o }, o)),
-              ),
-            ),
-            HX(
-              "div",
-              { className: "col-span-2" },
-              HX("span", { className: lbl }, "Capa / thumbnail"),
-              HX(Od, { variant: "full", value: f.cover, onChange: (v) => set("cover", v), label: "Capa do jogo", maxDim: 360, quality: 0.82 }),
-            ),
-          ),
         ),
-        err && HX("p", { className: "mt-3 text-[12px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+        // formulário
         HX(
           "div",
-          { className: "mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4" },
-          edit && onDelete
-            ? delAsk
-              ? HX(HBtn, { tone: "danger", onClick: () => (onDelete(), onClose()), label: "Confirmar exclus\xE3o do jogo" }, HX(yt, { size: 13 }), "Excluir de vez")
-              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir jogo" }, HX(yt, { size: 13 }), "Excluir")
-            : HX("span", {}),
-          HX(ye, { variant: "primary", onClick: save }, HX(edit ? ls : gt, { size: 15, strokeWidth: 2.5 }), edit ? "Salvar" : "Cadastrar"),
+          { className: "grid grid-cols-1 gap-x-4 gap-y-3 px-4 py-4 sm:grid-cols-2 sm:px-6" },
+          HX(
+            "label",
+            { className: "block sm:col-span-2" },
+            HX("span", { className: lbl }, "Nome do jogo"),
+            HX("input", {
+              autoFocus: !0,
+              type: "text",
+              "aria-label": "Nome do jogo",
+              value: f.name,
+              maxLength: 160,
+              placeholder: "Ex.: Cyberpunk 2077",
+              onChange: (ev) => set("name", ev.target.value),
+              onKeyDown: (ev) => {
+                ev.key === "Enter" && save();
+              },
+              className: `${inp} text-[15px] font-semibold text-white`,
+            }),
+          ),
+          txt("genre", "G\xEAnero / Tipo", { maxLength: 160, placeholder: "Ex.: Survival horror" }),
+          txt("platform", "Plataforma", { maxLength: 40, list: "gm-plat-list", placeholder: "PS5, PC, Switch…" }),
+          HX("datalist", { id: "gm-plat-list" }, ...Mie.map((o) => HX("option", { key: o, value: o }))),
+          txt("hltb", "How long to beat (h)", { inputMode: "decimal", maxLength: 8, placeholder: "—" }),
+          txt("time", "Tempo atual (h)", { inputMode: "decimal", maxLength: 8, placeholder: "—" }),
+          hl > 0 &&
+            HX(
+              "div",
+              { className: "sm:col-span-2", "data-game-progress": !0 },
+              HX(
+                "div",
+                { className: "flex justify-between text-[12px] text-[#8b929a]" },
+                HX("span", {}, `Progresso: ${gmHrs(tm)} de ${gmHrs(hl)}`),
+                HX("span", { className: "font-semibold text-[#66c0f4]" }, `${pct}%`),
+              ),
+              HX(
+                "div",
+                { className: "mt-1 h-[6px] overflow-hidden rounded-full bg-black/40" },
+                HX("div", { className: "h-full rounded-full", style: { width: `${Math.min(100, (tm / hl) * 100)}%`, background: pct >= 100 ? "#59bf40" : "#1a9fff" } }),
+              ),
+            ),
+          HX(
+            "label",
+            { className: "block min-w-0" },
+            HX("span", { className: lbl }, "Status"),
+            HX(
+              "select",
+              { "aria-label": "Status do jogo", value: f.status || "", onChange: (ev) => set("status", ev.target.value), className: `${sel} font-semibold`, style: { color: f.status ? st.text : void 0 } },
+              HX("option", { value: "" }, "—"),
+              ...p2.map((o) => HX("option", { key: o, value: o }, o)),
+            ),
+          ),
+          HX(
+            "label",
+            { className: "block min-w-0" },
+            HX("span", { className: lbl }, "Data de conclus\xE3o"),
+            HX("input", { type: "date", "aria-label": "Data de conclus\xE3o", value: f.date || "", onChange: (ev) => set("date", ev.target.value), className: inp }),
+          ),
+          HX(
+            "label",
+            { className: "block min-w-0" },
+            HX("span", { className: lbl }, "Nota"),
+            HX(
+              "select",
+              {
+                "aria-label": "Nota",
+                value: f.rating || "",
+                onChange: (ev) => set("rating", ev.target.value),
+                className: `${sel} font-bold`,
+                style: { color: gmTop(f.rating) ? "#ffd24a" : f.rating ? "#66c0f4" : void 0 },
+              },
+              HX("option", { value: "" }, "—"),
+              ...Z8.map((o) => HX("option", { key: o, value: o }, o)),
+            ),
+          ),
+          HX(
+            "label",
+            { className: "block min-w-0" },
+            HX("span", { className: lbl }, "Dificuldade"),
+            HX(
+              "select",
+              { "aria-label": "Dificuldade", value: f.difficulty || "", onChange: (ev) => set("difficulty", ev.target.value), className: sel },
+              HX("option", { value: "" }, "—"),
+              ...Q8.map((o) => HX("option", { key: o, value: o }, o)),
+            ),
+          ),
+          // capa: enviar imagem (base64) ou colar o link de uma imagem
+          HX(
+            "div",
+            { className: "sm:col-span-2" },
+            HX("span", { className: lbl }, "Capa / thumbnail"),
+            HX(
+              "div",
+              { className: "flex flex-wrap items-center gap-2" },
+              HX("input", { ref: fileRef, type: "file", accept: "image/*", "aria-label": "Capa do jogo", className: "hidden", onChange: pick }),
+              HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => fileRef.current && fileRef.current.click(),
+                  "aria-busy": busy,
+                  className: "flex items-center gap-2 rounded-[2px] bg-[#3d4450] px-3 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#4b5566]",
+                },
+                HX(cs, { size: 15 }),
+                busy ? "Lendo…" : f.cover ? "Trocar imagem" : "Enviar imagem",
+              ),
+              f.cover &&
+                HX(
+                  "button",
+                  { type: "button", onClick: () => set("cover", ""), className: "rounded-[2px] px-2 py-2 text-[12px] text-[#8b929a] transition-colors hover:text-[#f87171]" },
+                  "Remover",
+                ),
+              HX(
+                "a",
+                {
+                  href: `https://www.steamgriddb.com/search/grids?term=${encodeURIComponent(name)}`,
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  className: "ml-auto flex items-center gap-1 text-[12px] text-[#66c0f4] hover:text-white hover:underline",
+                  title: "Abre o SteamGridDB (capas no formato da biblioteca da Steam, 600\xD7900) em outra aba",
+                },
+                "Procurar capa",
+                HX(If, { size: 12 }),
+              ),
+            ),
+            HX("input", {
+              type: "url",
+              inputMode: "url",
+              "aria-label": "Link da capa",
+              value: coverUrl,
+              placeholder: "…ou cole o link de uma imagem (https://…)",
+              onChange: (ev) => set("cover", ev.target.value.trim()),
+              className: `${inp} mt-2 text-[13px]`,
+            }),
+            HX("p", { className: "mt-1 text-[11px] text-[#6b7280]" }, "Dica: um link n\xE3o ocupa espa\xE7o no navegador; a imagem enviada fica guardada no app."),
+          ),
+        ),
+      ),
+      // rodapé fixo
+      HX(
+        "div",
+        { className: "flex flex-wrap items-center gap-2 border-t border-black/40 bg-[#171d25] px-4 py-3 sm:px-6" },
+        err && HX("p", { className: "w-full text-[12px] font-semibold text-[#ffb347]", role: "alert" }, err),
+        edit && onDelete
+          ? delAsk
+            ? HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => (onDelete(), onClose()),
+                  "aria-label": "Confirmar exclus\xE3o do jogo",
+                  className: "flex items-center gap-1.5 rounded-[2px] bg-[#c1272d] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#dc2f36]",
+                },
+                HX(yt, { size: 14 }),
+                "Excluir de vez",
+              )
+            : HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: () => setDelAsk(!0),
+                  "aria-label": "Excluir jogo",
+                  className: "flex items-center gap-1.5 rounded-[2px] px-3 py-2 text-[13px] text-[#8b929a] transition-colors hover:bg-white/5 hover:text-[#f87171]",
+                },
+                HX(yt, { size: 14 }),
+                "Excluir",
+              )
+          : null,
+        HX("span", { className: "flex-1" }),
+        HX(
+          "button",
+          { type: "button", onClick: onClose, className: "rounded-[2px] bg-[#3d4450] px-4 py-2 text-[13px] font-medium text-[#dcdedf] transition-colors hover:bg-[#4b5566]" },
+          "Cancelar",
+        ),
+        HX(
+          "button",
+          {
+            type: "button",
+            onClick: save,
+            className: "flex items-center gap-2 rounded-[2px] px-5 py-2 text-[14px] font-semibold text-white shadow-[0_2px_8px_rgba(0,0,0,.4)] transition-[filter] hover:brightness-110",
+            style: { background: "linear-gradient(90deg,#75b022 5%,#588a1b 95%)" },
+          },
+          HX(edit ? ls : gt, { size: 16, strokeWidth: 2.5 }),
+          edit ? "Salvar" : "Cadastrar",
         ),
       ),
     ),
   );
 }
-// ---- página da aba BACKLOG DE JOGOS ----
+// ---- página da aba BACKLOG DE JOGOS (biblioteca estilo Steam) ----
 function GamesPage({ games, setGames }) {
   let [modal, setModal] = (0, K.useState)(null),
     [filter, setFilter] = (0, K.useState)("all"),
     [platF, setPlatF] = (0, K.useState)("all"),
     [q, setQ] = (0, K.useState)(""),
     [sort, setSort] = (0, K.useState)("shelf"),
+    [zoom, setZoom] = (0, K.useState)(gmZoomLoad),
+    [hover, setHover] = (0, K.useState)(null),
+    timer = (0, K.useRef)(0),
+    pend = (0, K.useRef)(null), // capa com cartão agendado (evita reagendar a cada movimento do mouse)
     // contadores (recalculados só quando a lista muda)
     platinas = (0, K.useMemo)(() => games.filter((g) => g.status === "Platinado").length, [games]),
     stats = (0, K.useMemo)(
@@ -13321,114 +13603,224 @@ function GamesPage({ games, setGames }) {
     zi = (r) => (Z8.includes(r) ? Z8.indexOf(r) : -1);
   sort === "name"
     ? shown.sort((a, b) => String(a.m.name).localeCompare(String(b.m.name), "pt-BR", { sensitivity: "base" }))
-    : sort === "rating"
-      ? shown.sort((a, b) => zi(b.m.rating) - zi(a.m.rating) || a.i - b.i)
-      : sort === "status"
-        ? shown.sort((a, b) => (GM_ST_ORDER[a.m.status || ""] ?? 9) - (GM_ST_ORDER[b.m.status || ""] ?? 9) || a.i - b.i)
-        : sort === "platform"
-          ? shown.sort((a, b) => String(a.m.platform || "￿").localeCompare(String(b.m.platform || "￿"), "pt-BR", { sensitivity: "base" }) || a.i - b.i)
-          : sort === "progress" &&
-            shown.sort((a, b) => {
-              let p = (g) => (gmNum(g.hltb) > 0 ? gmNum(g.time) / gmNum(g.hltb) : -1);
-              return p(b.m) - p(a.m) || a.i - b.i;
-            });
+    : sort === "hours"
+      ? shown.sort((a, b) => gmNum(b.m.time) - gmNum(a.m.time) || a.i - b.i)
+      : sort === "date"
+        ? shown.sort((a, b) => String(b.m.date || "").localeCompare(String(a.m.date || "")) || a.i - b.i)
+        : sort === "rating"
+          ? shown.sort((a, b) => zi(b.m.rating) - zi(a.m.rating) || a.i - b.i)
+          : sort === "status"
+            ? shown.sort((a, b) => (GM_ST_ORDER[a.m.status || ""] ?? 9) - (GM_ST_ORDER[b.m.status || ""] ?? 9) || a.i - b.i)
+            : sort === "platform"
+              ? shown.sort((a, b) => String(a.m.platform || "￿").localeCompare(String(b.m.platform || "￿"), "pt-BR", { sensitivity: "base" }) || a.i - b.i)
+              : sort === "progress" &&
+                shown.sort((a, b) => {
+                  let p = (g) => (gmNum(g.hltb) > 0 ? gmNum(g.time) / gmNum(g.hltb) : -1);
+                  return p(b.m) - p(a.m) || a.i - b.i;
+                });
   let list = shown.map((x) => x.m),
     noFilter = filter === "all" && platF === "all" && !term,
-    open = (id) => setModal({ id }),
-    add = () => setModal({ id: null }),
-    ctl = "shrink-0 cursor-pointer border border-red-900/80 bg-[#0a0507] px-2 py-1.5 text-[13px] text-cyan-100 [color-scheme:dark] focus:border-cyan-400 focus:outline-none [&>option]:bg-zinc-950";
+    hideCard = () => (clearTimeout(timer.current), (pend.current = null), setHover(null)),
+    onHover = (id, el, type) => {
+      if (!id || !el) return hideCard();
+      if (type === "mousemove" && (pend.current === id || (hover && hover.id === id))) return;
+      clearTimeout(timer.current);
+      // mouse: só em aparelhos com hover real (no celular o toque abre direto o modal) · teclado: foco visível
+      let kb = type === "focus",
+        ok = !1;
+      try {
+        ok = kb ? el.matches(":focus-visible") : !!(window.matchMedia && window.matchMedia("(hover: hover)").matches);
+      } catch {}
+      if (!ok) return;
+      pend.current = id;
+      timer.current = setTimeout(() => ((pend.current = null), setHover({ id, rect: el.getBoundingClientRect() })), kb ? 0 : 280);
+    },
+    open = (id) => (hideCard(), setModal({ id })),
+    add = () => (hideCard(), setModal({ id: null })),
+    setZ = (v) => {
+      setZoom(v);
+      try {
+        localStorage.setItem(GM_ZOOM_KEY, String(v));
+      } catch {}
+    },
+    hovGame = hover ? games.find((g) => g.id === hover.id) : null,
+    fName = filter === "all" ? "Todos os jogos" : filter === "none" ? "Sem status" : filter,
+    title = term ? `Resultados para “${q.trim()}”` : `${fName}${platF !== "all" ? ` \xB7 ${platF || "Sem plataforma"}` : ""}`,
+    ctl = "min-w-0 cursor-pointer rounded-[2px] border border-transparent bg-[#3d4450] px-2.5 py-[7px] text-[13px] text-[#dcdedf] [color-scheme:dark] hover:bg-[#4b5566] focus:border-[#1a9fff] focus:outline-none [&>option]:bg-[#2d333c]";
+  (0, K.useEffect)(() => () => clearTimeout(timer.current), []);
   return HX(
     "div",
-    { className: "min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-8", "data-games-page": !0 },
-    HX(Pd, {
-      icon: Xo,
-      title: "Backlog de jogos",
-      sub: `Estante de jogos \xB7 ${games.length} jogo${games.length === 1 ? "" : "s"} \xB7 jogos a zerar`,
-      right: HX(
-        "span",
-        { className: "flex flex-wrap items-center gap-3" },
-        // contador de platinas (mantido no topo)
+    { className: "min-h-0 flex-1 overflow-y-auto px-2 pb-6 sm:px-6", "data-games-page": !0, onScroll: hover ? hideCard : void 0 },
+    HX(
+      "section",
+      {
+        className: "relative mx-auto max-w-[1920px] overflow-hidden rounded-[4px] bg-[#2d333c] text-[#dcdedf] shadow-[0_0_0_1px_rgba(255,255,255,.04),0_20px_60px_rgba(0,0,0,.55)]",
+        style: { fontFamily: GM_FONT },
+        "aria-label": "Biblioteca de jogos",
+        "data-steam-lib": !0,
+      },
+      // cabeçalho: título, platinas e adicionar jogo
+      HX(
+        "div",
+        { className: "flex flex-wrap items-center gap-x-5 gap-y-3 px-4 pb-4 pt-5 sm:px-6", style: { background: "linear-gradient(180deg,#1b2838 0%,#232b36 100%)" } },
         HX(
-          "span",
-          { className: "relative", "data-platinas": !0, "aria-label": `Platinas: ${platinas}` },
-          HX("span", { className: "absolute inset-0", style: { clipPath: ot, background: "#a5f3fc" } }),
-          HX("span", { className: "absolute bg-[#0b2a31]", style: { inset: 1.5, clipPath: ot } }),
+          "div",
+          { className: "min-w-0 flex-1 basis-full sm:basis-auto" },
+          HX(
+            "div",
+            { className: "flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#66c0f4]" },
+            HX(Xo, { size: 15, strokeWidth: 2 }),
+            "Biblioteca",
+          ),
+          HX("h2", { className: "mt-0.5 truncate text-[26px] font-light leading-tight text-white sm:text-[32px]" }, "Backlog de jogos"),
+          HX("p", { className: "text-[12.5px] text-[#8b929a]" }, `${games.length} jogo${games.length === 1 ? "" : "s"} na biblioteca \xB7 jogos a zerar`),
+        ),
+        // contador de platinas (mantido no topo) no estilo das conquistas da Steam
+        HX(
+          "div",
+          {
+            className: "flex items-center gap-3 rounded-[3px] bg-black/25 px-3 py-2 ring-1 ring-white/5",
+            "data-platinas": !0,
+            "aria-label": `Platinas: ${platinas}`,
+            title: "Jogos com status Platinado",
+          },
           HX(
             "span",
-            { className: "relative flex items-center gap-2.5 px-4 py-1.5", style: { filter: "drop-shadow(0 0 8px rgba(165,243,252,.55))" } },
-            HX(Sr, { size: 22, strokeWidth: 1.7, className: "text-cyan-100" }),
-            HX("span", { className: "text-[10px] font-semibold uppercase leading-none tracking-[0.25em] text-cyan-200" }, "Platinas"),
+            {
+              className: "flex h-10 w-10 items-center justify-center rounded-full",
+              style: { background: "radial-gradient(circle at 35% 30%,#f2fdff 0%,#a5f3fc 40%,#0e7490 100%)", boxShadow: "0 0 16px rgba(125,211,252,.55)" },
+            },
+            HX(Sr, { size: 19, strokeWidth: 2.2, className: "text-[#083344]" }),
+          ),
+          HX(
+            "div",
+            {},
+            HX("div", { className: "text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b929a]" }, "Platinas"),
+            HX("div", { className: "text-[24px] font-light leading-none text-white", "data-platinas-value": !0 }, platinas),
+          ),
+        ),
+        HX(
+          "button",
+          {
+            type: "button",
+            onClick: add,
+            className: "flex items-center gap-2 rounded-[2px] px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_2px_10px_rgba(0,0,0,.35)] transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
+            style: { background: "linear-gradient(90deg,#47bfff 0%,#1a44c2 100%)" },
+          },
+          HX(gt, { size: 16, strokeWidth: 2.6 }),
+          "Novo jogo",
+        ),
+      ),
+      // estatísticas (jogos · zerados · jogando · horas jogadas)
+      HX(
+        "div",
+        { className: "grid grid-cols-2 gap-px border-y border-black/30 bg-black/25 sm:grid-cols-4", "data-games-stats": !0, role: "group", "aria-label": "Estat\xEDsticas do backlog" },
+        ...[
+          ["games", "Jogos", games.length.toLocaleString("pt-BR"), "#66c0f4", Xo, "Jogos na biblioteca"],
+          ["done", "Zerados", stats.zerados.toLocaleString("pt-BR"), "#4ade80", Wn, "Zerados + platinados"],
+          ["playing", "Jogando", stats.jogando.toLocaleString("pt-BR"), "#22d3ee", Wo, "Com status Jogando"],
+          ["hours", "Horas jogadas", gmHrs(stats.horas), "#e879f9", xf, "Soma do tempo atual de todos os jogos"],
+        ].map(([k, label, value, color, Icon, tip]) =>
+          HX(
+            "div",
+            { key: k, className: "flex min-w-0 items-center gap-3 bg-[#262c35] px-4 py-2 sm:px-6 sm:py-3", title: tip },
+            HX(Icon, { size: 18, strokeWidth: 2, className: "hidden shrink-0 sm:block", style: { color } }),
             HX(
-              "span",
-              { className: "font-orbit text-[26px] leading-none text-white", style: { textShadow: "0 0 12px rgba(165,243,252,.9)" }, "data-platinas-value": !0 },
-              platinas,
+              "div",
+              { className: "min-w-0" },
+              HX("div", { className: "truncate text-[19px] font-light leading-none text-white sm:text-[22px]", [`data-stat-${k}`]: !0 }, value),
+              HX("div", { className: "mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.14em] sm:text-[10.5px]", style: { color } }, label),
             ),
           ),
         ),
-        HX(ye, { variant: "primary", onClick: add }, HX(gt, { size: 15, strokeWidth: 3 }), "Novo jogo"),
       ),
-    }),
-    // HUD compacto (mesmo componente da aba Mídias)
-    HX(HudTiles, {
-      label: "Estat\xEDsticas do backlog",
-      attr: "data-games-stats",
-      items: [
-        { k: "games", label: "Jogos", short: "Jogos", value: games.length.toLocaleString("pt-BR"), color: "#facc15", icon: Xo, title: "Jogos na estante" },
-        { k: "done", label: "Zerados", short: "Zerados", value: stats.zerados.toLocaleString("pt-BR"), color: "#4ade80", icon: Wn, title: "Zerados + platinados" },
-        { k: "playing", label: "Jogando", short: "Jogando", value: stats.jogando.toLocaleString("pt-BR"), color: "#22d3ee", icon: Wo, title: "Com status Jogando" },
-        { k: "hours", label: "Horas jogadas", short: "Horas", value: gmHrs(stats.horas), color: "#e879f9", icon: xf, title: "Soma do tempo atual de todos os jogos" },
-      ],
-    }),
-    // filtros por status (LEDs com a mesma cor da caixa), plataforma, busca e ordenação
-    HX(
-      "div",
-      // celular: uma faixa rolável (8 filtros não viram 4 linhas); telas maiores: quebra de linha normal
-      {
-        className: "-mx-4 mb-3 flex items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden",
-        role: "group",
-        "aria-label": "Filtrar por status",
-        "data-games-chips": !0,
-      },
-      HX(MdChip, { on: filter === "all", onClick: () => setFilter("all"), label: "Filtro Todos" }, `Todos \xB7 ${games.length}`),
-      ...p2.map((s) =>
-        HX(MdChip, { key: s, on: filter === s, onClick: () => setFilter(filter === s ? "all" : s), st: GM_ST[s], label: `Filtro ${s}` }, `${s} \xB7 ${stats.counts[s]}`),
+      // filtros: status (pílulas com LED), busca, plataforma, ordenação e tamanho das capas
+      HX(
+        "div",
+        { className: "space-y-3 px-4 pt-4 sm:px-6" },
+        HX(
+          "div",
+          {
+            className: "-mx-4 flex items-center gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden",
+            role: "group",
+            "aria-label": "Filtrar por status",
+            "data-games-chips": !0,
+          },
+          HX(GmPill, { on: filter === "all", onClick: () => setFilter("all"), label: "Filtro Todos", count: games.length }, "Todos"),
+          ...p2.map((s) => HX(GmPill, { key: s, on: filter === s, onClick: () => setFilter(filter === s ? "all" : s), st: GM_ST[s], label: `Filtro ${s}`, count: stats.counts[s] }, s)),
+          HX(GmPill, { on: filter === "none", onClick: () => setFilter(filter === "none" ? "all" : "none"), st: GM_ST[""], label: "Filtro Sem status", count: stats.counts[""] }, "Sem status"),
+        ),
+        HX(
+          "div",
+          { className: "flex flex-wrap items-center gap-2" },
+          HX(
+            "label",
+            { className: "relative min-w-0 flex-1 basis-full sm:max-w-sm sm:basis-auto" },
+            HX(ss, { size: 15, className: "pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8b929a]" }),
+            HX("input", {
+              type: "search",
+              "aria-label": "Buscar jogo",
+              value: q,
+              placeholder: "Pesquisar jogo, g\xEAnero, plataforma…",
+              onChange: (ev) => setQ(ev.target.value),
+              className: "w-full rounded-[2px] border border-transparent bg-[#1b2029] py-[7px] pl-8 pr-2.5 text-[13.5px] text-[#dcdedf] placeholder-[#6b7280] focus:border-[#1a9fff] focus:outline-none",
+            }),
+          ),
+          HX(
+            "select",
+            { "aria-label": "Filtrar por plataforma", value: platF, onChange: (ev) => setPlatF(ev.target.value), className: `${ctl} min-w-[9rem] flex-1 sm:flex-none` },
+            HX("option", { value: "all" }, "Todas as plataformas"),
+            ...plats.map(([p, n]) => HX("option", { key: p || "_none", value: p }, `${p || "Sem plataforma"} (${n})`)),
+          ),
+          HX(
+            "label",
+            { className: "flex min-w-[9rem] flex-1 items-center gap-2 sm:flex-none" },
+            HX("span", { className: "hidden shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8b929a] lg:inline" }, "Ordenar por"),
+            HX(
+              "select",
+              { "aria-label": "Ordenar biblioteca", value: sort, onChange: (ev) => setSort(ev.target.value), className: `${ctl} flex-1 sm:flex-none` },
+              ...GM_SORTS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+            ),
+          ),
+          HX(
+            "label",
+            { className: "ml-auto flex basis-full items-center justify-end gap-2 text-[#8b929a] sm:basis-auto", title: "Tamanho das capas" },
+            HX(Hf, { size: 13, strokeWidth: 2 }),
+            HX("input", {
+              type: "range",
+              min: 0,
+              max: GM_ZOOM.length - 1,
+              step: 1,
+              value: zoom,
+              "aria-label": "Tamanho das capas",
+              onChange: (ev) => setZ(Number(ev.target.value)),
+              className: "w-24 cursor-pointer accent-[#1a9fff] sm:w-28",
+            }),
+            HX("span", { className: "flex h-[15px] w-[11px] items-center justify-center rounded-[1px] border-[1.5px] border-current", "aria-hidden": "true" }),
+          ),
+        ),
       ),
-      HX(MdChip, { on: filter === "none", onClick: () => setFilter(filter === "none" ? "all" : "none"), st: GM_ST[""], label: "Filtro Sem status" }, `Sem status \xB7 ${stats.counts[""]}`),
+      // título da coleção (como "TODOS OS JOGOS (67)" na Steam)
+      HX(
+        "div",
+        { className: "flex items-center gap-3 px-4 pb-3 pt-5 sm:px-6" },
+        HX(
+          "h3",
+          { className: "min-w-0 shrink truncate text-[13px] font-semibold uppercase tracking-[0.12em] text-white", "data-games-title": !0 },
+          title,
+          HX("span", { className: "ml-1.5 font-normal text-[#8b929a]" }, `(${list.length})`),
+        ),
+        HX("span", { "aria-hidden": "true", className: "h-px min-w-8 flex-1 bg-gradient-to-r from-[#4b5563] to-transparent" }),
+      ),
+      games.length === 0 && HX("p", { className: "px-6 pb-3 text-[13px] text-[#8b929a]" }, 'Backlog vazio \xB7 use "Novo jogo"'),
+      games.length > 0 && list.length === 0 && HX("p", { className: "px-6 pb-3 text-[13px] text-[#8b929a]" }, "Nenhum jogo encontrado com esse filtro"),
+      HX(
+        "div",
+        { className: "px-4 pb-8 sm:px-6" },
+        HX(GamesGrid, { items: list, onOpen: open, onAdd: add, showAdd: noFilter, zoom, onHover }),
+      ),
     ),
-    HX(
-      "div",
-      { className: "mb-4 flex w-full min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end" },
-      HX(
-        "label",
-        { className: "relative min-w-0 flex-1 basis-full sm:w-72 sm:flex-none sm:basis-auto" },
-        HX(ss, { size: 14, className: "pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" }),
-        HX("input", {
-          type: "search",
-          "aria-label": "Buscar jogo",
-          value: q,
-          placeholder: "Buscar jogo, g\xEAnero, plataforma…",
-          onChange: (ev) => setQ(ev.target.value),
-          className: `${HIN} pl-8`,
-        }),
-      ),
-      HX(
-        "select",
-        { "aria-label": "Filtrar por plataforma", value: platF, onChange: (ev) => setPlatF(ev.target.value), className: `${ctl} min-w-0 flex-1 sm:flex-none` },
-        HX("option", { value: "all" }, "Todas as plataformas"),
-        ...plats.map(([p, n]) => HX("option", { key: p || "_none", value: p }, `${p || "Sem plataforma"} (${n})`)),
-      ),
-      HX(
-        "select",
-        { "aria-label": "Ordenar estante", value: sort, onChange: (ev) => setSort(ev.target.value), className: `${ctl} min-w-0 flex-1 sm:flex-none` },
-        ...GM_SORTS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
-      ),
-    ),
-    games.length === 0 &&
-      HX("p", { className: "mb-3 text-center text-[13px] uppercase tracking-[0.2em] text-cyan-200/70" }, 'Backlog vazio \xB7 use "Novo jogo"'),
-    games.length > 0 &&
-      list.length === 0 &&
-      HX("p", { className: "mb-3 text-center text-[13px] uppercase tracking-[0.2em] text-zinc-500" }, "Nenhum jogo encontrado com esse filtro"),
-    HX(MediaShelf, { items: list, onOpen: open, onAdd: add, showAdd: noFilter, Case: GameCase, ratio: 1.27, addLabel: "Novo jogo", addFirst: !0, name: "games" }),
+    hovGame && !modal && kbPortal(HX(GameHoverCard, { key: hovGame.id, g: hovGame, rect: hover.rect })),
     modal &&
       kbPortal(
         HX(GameModal, {
