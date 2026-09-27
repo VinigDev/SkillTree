@@ -2274,12 +2274,18 @@ function Nie() {
     let e = localStorage.getItem(D8);
     if (!e) return o2.map((a) => ({ ...a }));
     let t = JSON.parse(e);
+    let seen = new Set(),
+      uid = (x) => {
+        let id = ge(x, 20);
+        (!id || seen.has(id)) && (id = Qe());
+        return (seen.add(id), id);
+      };
     return Array.isArray(t)
       ? t
           .filter((a) => a && typeof a == "object")
           .slice(0, 1e3)
           .map((a) => ({
-            id: ge(a.id, 20) || Qe(),
+            id: uid(a.id),
             cover: Ad(a.cover),
             name: ge(a.name),
             genre: ge(a.genre),
@@ -9773,302 +9779,7 @@ function Ole({ url: e, alt: t, icon: a = zf }) {
         children: (0, u.jsx)(a, { size: 16, className: "text-red-700" }),
       });
 }
-function Mle({ games: e, setGames: t }) {
-  let [a, r] = (0, K.useState)(""),
-    [n, o] = (0, K.useState)("all"),
-    i = (g, L, h) => t((y) => y.map((S) => (S.id === g ? { ...S, [L]: h } : S))),
-    l = (g) => t((L) => L.filter((h) => h.id !== g)),
-    s = () => {
-      (r(""), o("all"), t((g) => [Tie(), ...g]));
-    },
-    c = e.filter((g) => {
-      if (n === "none" ? g.status !== "" : n !== "all" && g.status !== n) return !1;
-      let L = a.trim().toLowerCase();
-      return !L || `${g.name} ${g.genre} ${g.platform}`.toLowerCase().includes(L);
-    }),
-    f = (0, K.useMemo)(() => e.filter((g) => g.status === "Platinado").length, [e]),
-    d = e.filter((g) => g.status === "Zerado" || g.status === "Platinado").length,
-    m = e.filter((g) => g.status === "Jogando").length,
-    x = e.reduce((g, L) => g + ea(L.time), 0),
-    w = [
-      "Capa",
-      "Jogo",
-      "G\xEAnero/Tipo",
-      "How long to beat (h)",
-      "Tempo atual (h)",
-      "Plataforma",
-      "Status",
-      "Data",
-      "Nota",
-      "Dificuldade",
-    ];
-  return (0, u.jsxs)("div", {
-    className: "flex min-h-0 flex-1 flex-col px-4 pb-4 sm:px-8",
-    children: [
-      (0, u.jsx)(Pd, {
-        icon: Xo,
-        title: "Backlog de jogos",
-        sub: "Data grid \xB7 jogos a zerar",
-        right: (0, u.jsxs)("span", {
-          className: "flex flex-wrap items-center gap-3",
-          children: [
-            (0, u.jsxs)("span", {
-              className: "relative",
-              "data-platinas": !0,
-              "aria-label": `Platinas: ${f}`,
-              children: [
-                (0, u.jsx)("span", { className: "absolute inset-0", style: { clipPath: ot, background: "#a5f3fc" } }),
-                (0, u.jsx)("span", { className: "absolute bg-[#0b2a31]", style: { inset: 1.5, clipPath: ot } }),
-                (0, u.jsxs)("span", {
-                  className: "relative flex items-center gap-2.5 px-4 py-1.5",
-                  style: { filter: "drop-shadow(0 0 8px rgba(165,243,252,.55))" },
-                  children: [
-                    (0, u.jsx)(Sr, { size: 22, strokeWidth: 1.7, className: "text-cyan-100" }),
-                    (0, u.jsx)("span", {
-                      className: "text-[10px] font-semibold uppercase leading-none tracking-[0.25em] text-cyan-200",
-                      children: "Platinas",
-                    }),
-                    (0, u.jsx)("span", {
-                      className: "font-orbit text-[26px] leading-none text-white",
-                      style: { textShadow: "0 0 12px rgba(165,243,252,.9)" },
-                      "data-platinas-value": !0,
-                      children: f,
-                    }),
-                  ],
-                }),
-              ],
-            }),
-            (0, u.jsxs)(ye, {
-              variant: "primary",
-              onClick: s,
-              children: [(0, u.jsx)(gt, { size: 15, strokeWidth: 3 }), "Novo jogo"],
-            }),
-          ],
-        }),
-      }),
-      (0, u.jsxs)("div", {
-        className: "mb-3 flex flex-wrap items-center gap-x-4 gap-y-2",
-        children: [
-          (0, u.jsxs)("div", {
-            className: "flex items-center gap-2 border border-red-800 bg-zinc-950 px-2 focus-within:border-cyan-400",
-            children: [
-              (0, u.jsx)(ss, { size: 15, className: "text-red-400" }),
-              (0, u.jsx)("input", {
-                "aria-label": "Buscar jogo",
-                value: a,
-                onChange: (g) => r(g.target.value),
-                placeholder: "Buscar jogo, g\xEAnero, plataforma\u2026",
-                className:
-                  "w-[220px] bg-transparent py-1.5 text-[14px] text-cyan-100 placeholder-red-900 focus:outline-none",
-              }),
-            ],
-          }),
-          (0, u.jsx)("div", {
-            className: "flex flex-wrap gap-1.5",
-            role: "group",
-            "aria-label": "Filtrar por status",
-            children: [["all", "Todos"], ...p2.map((g) => [g, g]), ["none", "Sem status"]].map(([g, L]) =>
-              (0, u.jsx)(q0, { on: n === g, onClick: () => o(g), label: `Filtro ${L}`, children: L }, g),
-            ),
-          }),
-          (0, u.jsx)("div", {
-            className: "ml-auto flex flex-wrap gap-2 text-[11px] uppercase tracking-wider",
-            children: [
-              ["Jogos", e.length, "#22d3ee"],
-              ["Zerados", d, "#facc15"],
-              ["Jogando", m, "#22d3ee"],
-              ["Horas jogadas", `${String(Math.round(x * 10) / 10).replace(".", ",")}h`, "#facc15"],
-            ].map(([g, L, h]) =>
-              (0, u.jsxs)(
-                "span",
-                {
-                  className: "border border-red-900/70 bg-black/30 px-2.5 py-1 text-red-400/80",
-                  children: [
-                    g,
-                    " ",
-                    (0, u.jsx)("b", { className: "font-orbit text-[13px]", style: { color: h }, children: L }),
-                  ],
-                },
-                g,
-              ),
-            ),
-          }),
-        ],
-      }),
-      (0, u.jsx)("datalist", { id: "plat-list", children: Mie.map((g) => (0, u.jsx)("option", { value: g }, g)) }),
-      (0, u.jsx)("div", {
-        className: "min-h-0 flex-1 overflow-auto border border-red-900/60 bg-black/30",
-        style: { boxShadow: "inset 0 0 30px rgba(239,68,68,.06)" },
-        children: (0, u.jsxs)("table", {
-          className: "w-full min-w-[1500px] border-collapse text-left",
-          "aria-label": "Backlog de jogos",
-          children: [
-            (0, u.jsx)("thead", {
-              children: (0, u.jsxs)("tr", {
-                children: [
-                  w.map((g, L) =>
-                    (0, u.jsx)(
-                      "th",
-                      {
-                        className: `${ha} sticky top-0 z-20 border-b border-red-800 bg-[#1a0b0e] ${L === 0 ? "w-[190px] min-w-[190px]" : ""}${L === 1 ? "min-w-[220px]" : ""}`,
-                        children: g,
-                      },
-                      g,
-                    ),
-                  ),
-                  (0, u.jsx)("th", { className: "sticky top-0 z-20 w-9 border-b border-red-800 bg-[#1a0b0e]" }),
-                ],
-              }),
-            }),
-            (0, u.jsxs)("tbody", {
-              children: [
-                c.map((g) => {
-                  let L = Aie[g.status];
-                  return (0, u.jsxs)(
-                    "tr",
-                    {
-                      className: xs,
-                      "data-game": !0,
-                      children: [
-                        (0, u.jsx)("td", {
-                          className: "h-[52px] w-[190px] min-w-[190px] align-middle",
-                          style: { borderLeft: `3px solid ${L || "#3b0f14"}` },
-                          children: (0, u.jsx)("div", {
-                            className: "flex items-center gap-2 px-2",
-                            children: (0, u.jsx)(Od, {
-                              value: g.cover,
-                              onChange: (h) => i(g.id, "cover", h),
-                              label: "Enviar capa do jogo",
-                              alt: g.name ? `Capa de ${g.name}` : "Capa",
-                              icon: Xo,
-                            }),
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "min-w-[220px]",
-                          children: (0, u.jsx)("input", {
-                            "aria-label": "Nome do jogo",
-                            className: `${Ze} font-semibold text-yellow-200`,
-                            value: g.name,
-                            placeholder: "Nome do jogo",
-                            onChange: (h) => i(g.id, "name", h.target.value),
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          children: (0, u.jsx)("input", {
-                            "aria-label": "G\xEAnero ou tipo",
-                            className: Ze,
-                            value: g.genre,
-                            onChange: (h) => i(g.id, "genre", h.target.value),
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "w-[110px]",
-                          children: (0, u.jsx)("input", {
-                            "aria-label": "How long to beat em horas",
-                            inputMode: "decimal",
-                            className: `${Ze} text-right font-orbit`,
-                            value: g.hltb,
-                            placeholder: "\u2014",
-                            onChange: (h) => i(g.id, "hltb", h.target.value.slice(0, 8)),
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "w-[100px]",
-                          children: (0, u.jsx)("input", {
-                            "aria-label": "Tempo atual em horas",
-                            inputMode: "decimal",
-                            className: `${Ze} text-right font-orbit`,
-                            value: g.time,
-                            placeholder: "\u2014",
-                            onChange: (h) => i(g.id, "time", h.target.value.slice(0, 8)),
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "w-[140px]",
-                          children: (0, u.jsx)("input", {
-                            "aria-label": "Plataforma",
-                            list: "plat-list",
-                            className: Ze,
-                            value: g.platform,
-                            onChange: (h) => i(g.id, "platform", h.target.value),
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "w-[172px] min-w-[172px]",
-                          children: (0, u.jsxs)("select", {
-                            "aria-label": "Status do jogo",
-                            className: `${ys} font-semibold uppercase tracking-wider`,
-                            style: { color: L || "#f87171" },
-                            value: g.status,
-                            onChange: (h) => i(g.id, "status", h.target.value),
-                            children: [
-                              (0, u.jsx)("option", { value: "", children: "\u2014" }),
-                              p2.map((h) => (0, u.jsx)("option", { value: h, children: h }, h)),
-                            ],
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "w-[150px]",
-                          children: (0, u.jsx)("input", {
-                            "aria-label": "Data de conclus\xE3o",
-                            type: "date",
-                            className: `${Ze} font-orbit text-[12px]`,
-                            value: g.date,
-                            onChange: (h) => i(g.id, "date", h.target.value),
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "w-[90px]",
-                          children: (0, u.jsxs)("select", {
-                            "aria-label": "Nota",
-                            className: `${ys} font-orbit font-bold`,
-                            style: { color: Oie.includes(g.rating) ? "#facc15" : g.rating ? "#67e8f9" : "#f87171" },
-                            value: g.rating,
-                            onChange: (h) => i(g.id, "rating", h.target.value),
-                            children: [
-                              (0, u.jsx)("option", { value: "", children: "\u2014" }),
-                              Z8.map((h) => (0, u.jsx)("option", { value: h, children: h }, h)),
-                            ],
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          className: "w-[160px]",
-                          children: (0, u.jsxs)("select", {
-                            "aria-label": "Dificuldade",
-                            className: `${ys} uppercase tracking-wide`,
-                            value: g.difficulty,
-                            onChange: (h) => i(g.id, "difficulty", h.target.value),
-                            children: [
-                              (0, u.jsx)("option", { value: "", children: "\u2014" }),
-                              Q8.map((h) => (0, u.jsx)("option", { value: h, children: h }, h)),
-                            ],
-                          }),
-                        }),
-                        (0, u.jsx)("td", {
-                          children: (0, u.jsx)(ai, {
-                            label: `Excluir jogo ${g.name || "sem nome"}`,
-                            onClick: () => l(g.id),
-                          }),
-                        }),
-                      ],
-                    },
-                    g.id,
-                  );
-                }),
-                c.length === 0 &&
-                  (0, u.jsx)(vs, {
-                    cols: 11,
-                    text: e.length ? "Nenhum jogo encontrado com esse filtro" : 'Backlog vazio \xB7 use "Novo jogo"',
-                  }),
-              ],
-            }),
-          ],
-        }),
-      }),
-    ],
-  });
-}
+// (Backlog de jogos: a antiga tabela/data grid foi substituída pela estante GamesPage, que usa o mesmo estado e os mesmos campos)
 function Tle({ label: e, tasks: t, onToggle: a, onText: r, onAdd: n, onDel: o, rowLabel: i, placeholder: l, kind: kd = "check", onPatch: pt }) {
   let stC = { [PLAN_ST[0]]: "#22d3ee", [PLAN_ST[1]]: "#facc15", [PLAN_ST[2]]: "#f87171" },
     inC = { [PLAN_INT[0]]: "#22d3ee", [PLAN_INT[1]]: "#facc15", [PLAN_INT[2]]: "#fb7185" },
@@ -11219,6 +10930,7 @@ function KanbanPage({ boards, setBoards, active, setActive }) {
 }
 // ===== HÁBITOS · rastreador com ofensiva (streak) e árvore que cresce =====
 // habits = [{ id, name, desc, icon (data URL base64), streak, best, lastCheckedDate ("AAAA-MM-DD"), history: [datas], prev }]
+// streak = ofensiva no último check-in. A ofensiva de HOJE é calculada (hbEff) com o decaimento gradual.
 // As datas usam o calendário LOCAL no formato ISO (AAAA-MM-DD). Com UTC o "dia" viraria às 21h no Brasil.
 var HB_KEY = "skilltree-habits-v1",
   hbToday = (d) => {
@@ -11242,15 +10954,21 @@ var HB_KEY = "skilltree-habits-v1",
     return Math.round((p(b) - p(a)) / 864e5);
   },
   hbValidDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")),
+  // dias sem check-in = (diferença em dias entre hoje e o último check-in) - 1 · ontem ainda não conta: hoje está em aberto
+  hbMissed = (last, today) => (hbValidDate(last) ? Math.max(0, hbDays(last, today) - 1) : 0),
+  // DECAIMENTO GRADUAL: cada dia sem check-in tira 1 dia da ofensiva, nunca abaixo de 0 (a árvore murcha aos poucos).
+  // É sempre calculado a partir das datas (nada é gravado automaticamente): reabrir o app, virar o dia ou
+  // sincronizar com outro aparelho nunca desconta em dobro, e um check-in feito em outro aparelho sempre vale.
+  hbEff = (h, today) => (hbValidDate(h.lastCheckedDate) ? Math.max(0, (h.streak || 0) - hbMissed(h.lastCheckedDate, today)) : 0),
   hbNew = (x) => ({ id: Qe(), name: "", desc: "", icon: "", streak: 0, best: 0, lastCheckedDate: "", history: [], prev: null, ...(x || {}) });
-// Regra da ofensiva: se o último check-in foi ANTES de ontem (esqueceu ontem), a ofensiva volta a 0.
+// Só corrige dado inconsistente (ofensiva sem data). O decaimento não grava nada: ver hbEff.
 function hbNormalize(h, today) {
-  return h.streak > 0 && (!h.lastCheckedDate || hbDays(h.lastCheckedDate, today) > 1) ? { ...h, streak: 0, prev: null } : h;
+  return h.streak > 0 && !hbValidDate(h.lastCheckedDate) ? { ...h, streak: 0, prev: null } : h;
 }
-// Check-in diário: só funciona 1x por dia. Check-in ontem -> +1; senão recomeça em 1.
+// Check-in diário: só funciona 1x por dia. Soma 1 à ofensiva de hoje (já com os dias perdidos descontados).
 function hbCheckIn(h, today) {
   if (h.lastCheckedDate && hbDays(h.lastCheckedDate, today) <= 0) return h;
-  let streak = h.lastCheckedDate && hbDays(h.lastCheckedDate, today) === 1 ? h.streak + 1 : 1;
+  let streak = hbEff(h, today) + 1;
   return {
     ...h,
     prev: { streak: h.streak, best: h.best, lastCheckedDate: h.lastCheckedDate },
@@ -11648,7 +11366,9 @@ function HabitModal({ habit, onSave, onDelete, onClose }) {
 // ---- cartão do hábito ----
 function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
   let done = !!h.lastCheckedDate && h.lastCheckedDate >= today,
-    st = hbStage(h.streak),
+    missed = done ? 0 : hbMissed(h.lastCheckedDate, today), // dias sem check-in (cada um tira 1 dia da ofensiva)
+    streak = hbEff(h, today), // ofensiva de hoje, já com o decaimento
+    st = hbStage(streak),
     stg = HB_STAGES[st],
     col = stg.col,
     hist = new Set(h.history || []),
@@ -11656,7 +11376,7 @@ function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
       let ds = hbAddDays(today, i - 6);
       return { ds, on: hist.has(ds), wd: "DSTQQSS"[hbDateObj(ds).getDay()], isToday: i === 6 };
     }),
-    toNext = stg.next ? stg.next - h.streak : 0;
+    toNext = stg.next ? stg.next - streak : 0;
   return HX(
     "article",
     {
@@ -11685,7 +11405,17 @@ function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
     HX(
       "div",
       { className: "relative mx-4 mt-3 h-40 overflow-hidden border border-white/5 bg-gradient-to-b from-[#07121a] to-[#0a0508]" },
-      HX("div", { key: h.streak, className: "hb-grow h-full w-full" }, HX(HabitTree, { streak: h.streak, uid: h.id })),
+      HX(
+        "div",
+        {
+          key: streak,
+          className: "hb-grow h-full w-full transition-[filter] duration-700",
+          // murchando: a árvore perde a cor enquanto houver dias sem check-in
+          style: missed > 0 ? { filter: `grayscale(${Math.min(0.85, 0.35 + missed * 0.1)}) sepia(.35) brightness(.78)` } : void 0,
+          "data-hb-wilt": missed > 0 ? missed : void 0,
+        },
+        HX(HabitTree, { streak, uid: h.id }),
+      ),
       HX("span", { className: "absolute left-2 top-1.5 text-[9px] font-semibold uppercase tracking-[0.25em]", style: { color: col } }, stg.name),
       HX(
         "span",
@@ -11699,8 +11429,8 @@ function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
       { className: "px-4 pt-3" },
       HX(
         "p",
-        { className: "text-[15px] font-bold tracking-wide", style: { color: h.streak ? "#fb923c" : "#71717a" }, "data-hb-streak": h.streak },
-        `\u{1F525} ${h.streak} dia${h.streak === 1 ? "" : "s"} de ofensiva`,
+        { className: "text-[15px] font-bold tracking-wide", style: { color: streak ? "#fb923c" : "#71717a" }, "data-hb-streak": streak },
+        `\u{1F525} ${streak} dia${streak === 1 ? "" : "s"} de ofensiva`,
       ),
       HX(
         "p",
@@ -11709,6 +11439,19 @@ function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
           ? `Pr\xF3ximo: ${HB_STAGES[st + 1].short} em ${toNext} dia${toNext === 1 ? "" : "s"}`
           : "Est\xE1gio m\xE1ximo alcan\xE7ado",
       ),
+      missed > 0 &&
+        HX(
+          "p",
+          {
+            className: "mt-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-400/90",
+            title: "Cada dia sem check-in tira 1 dia da ofensiva (nunca abaixo de 0). Fa\xE7a o check-in para voltar a crescer.",
+            "data-hb-missed": missed,
+          },
+          HX("span", { className: "h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-400 motion-reduce:animate-none", style: { boxShadow: "0 0 6px #fbbf24" } }),
+          streak > 0
+            ? `Murchando \xB7 ${missed} dia${missed === 1 ? "" : "s"} sem check-in (\u2212${Math.min(missed, h.streak || 0)})`
+            : `\xC1rvore seca \xB7 ${missed} dia${missed === 1 ? "" : "s"} sem check-in`,
+        ),
       HX(
         "div",
         { className: "mt-2" },
@@ -12431,25 +12174,27 @@ function MediaCase({ m, w, h, onOpen, preview }) {
     }),
   );
 }
-// ---- espaço vazio "+ cadastrar" no fim da estante ----
-function DvdAddSlot({ w, h, onAdd }) {
+// ---- espaço vazio "+ cadastrar" na estante ----
+function DvdAddSlot({ w, h, onAdd, label = "Cadastrar m\xEDdia" }) {
   return HX(
     "button",
     {
       type: "button",
       onClick: onAdd,
       "data-media-add": !0,
-      "aria-label": "Cadastrar m\xEDdia",
+      "aria-label": label,
       className:
         "flex shrink-0 flex-col items-center justify-center gap-2 rounded-[7px] border-2 border-dashed border-zinc-700 text-zinc-500 transition-all duration-200 hover:-translate-y-3 hover:border-cyan-400 hover:text-cyan-300 hover:shadow-[0_0_14px_rgba(34,211,238,.35)] focus-visible:-translate-y-3 focus-visible:border-cyan-400 focus-visible:text-cyan-300 focus-visible:outline-none motion-reduce:hover:translate-y-0",
       style: { width: w, height: h },
     },
     HX(gt, { size: 22, strokeWidth: 2.5 }),
-    HX("span", { className: "px-2 text-center text-[10px] font-semibold uppercase leading-tight tracking-[0.18em]" }, "Cadastrar m\xEDdia"),
+    HX("span", { className: "px-2 text-center text-[10px] font-semibold uppercase leading-tight tracking-[0.18em]" }, label),
   );
 }
 // ---- a estante: prateleiras de metal com vidro fumê; as capas quebram de linha conforme a largura ----
-function MediaShelf({ items, onOpen, onAdd, showAdd }) {
+// Genérica: Case = componente da caixa (MediaCase / GameCase), ratio = altura/largura da caixa,
+// addFirst = espaço "+" no começo (jogos novos entram no começo da lista) ou no fim (mídias).
+function MediaShelf({ items, onOpen, onAdd, showAdd, Case = MediaCase, ratio = 1.5, addLabel, addFirst = !1, name = "media" }) {
   let ref = (0, K.useRef)(null),
     [cw, setCw] = (0, K.useState)(0);
   (0, K.useLayoutEffect)(() => {
@@ -12467,11 +12212,12 @@ function MediaShelf({ items, onOpen, onAdd, showAdd }) {
   }, []);
   let small = cw > 0 && cw < 440,
     mid = cw >= 440 && cw < 780,
-    size = small ? { w: 92, h: 138 } : mid ? { w: 108, h: 162 } : { w: 128, h: 192 }, // proporção de capa (2:3)
+    bw = small ? 92 : mid ? 108 : 128,
+    size = { w: bw, h: Math.round(bw * ratio) }, // mídias: capa 2:3 · jogos: caixa de console (~4:5)
     gap = small ? 10 : 14,
     padX = small ? 10 : 18,
     cols = Math.max(1, Math.floor((Math.max(0, cw - padX * 2) + gap) / (size.w + gap))),
-    list = showAdd ? [...items, { id: "__add", add: !0 }] : items,
+    list = showAdd ? (addFirst ? [{ id: "__add", add: !0 }, ...items] : [...items, { id: "__add", add: !0 }]) : items,
     // colunas verticais de metal dividindo a estante em módulos (como estantes de DVD reais)
     unit = small ? 0 : mid ? 4 : 5,
     posts = [],
@@ -12484,7 +12230,7 @@ function MediaShelf({ items, onOpen, onAdd, showAdd }) {
     {
       className:
         "relative overflow-hidden rounded-[4px] border border-zinc-700/80 bg-gradient-to-b from-[#0d0f16]/90 via-[#0a0b10]/90 to-[#07080c]/95 shadow-[inset_0_0_60px_rgba(0,0,0,.85),0_0_30px_rgba(34,211,238,.08)] backdrop-blur-md",
-      "data-media-shelf": !0,
+      [`data-${name}-shelf`]: !0,
       "data-cols": cols,
     },
     // moldura de metal escuro com filete neon no topo e colunas laterais
@@ -12522,7 +12268,7 @@ function MediaShelf({ items, onOpen, onAdd, showAdd }) {
               style: { gap, paddingLeft: padX, paddingRight: padX, paddingTop: 20, minHeight: size.h + 20, marginBottom: 14 },
             },
             ...row.map((m) =>
-              m.add ? HX(DvdAddSlot, { key: m.id, w: size.w, h: size.h, onAdd }) : HX(MediaCase, { key: m.id, m, w: size.w, h: size.h, onOpen }),
+              m.add ? HX(DvdAddSlot, { key: m.id, w: size.w, h: size.h, onAdd, label: addLabel }) : HX(Case, { key: m.id, m, w: size.w, h: size.h, onOpen }),
             ),
             // quina da prateleira + fita de LED por baixo
             HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-x-0 -bottom-1 h-px bg-zinc-600/50" }),
@@ -12846,73 +12592,115 @@ function MediaModal({ item, onSave, onDelete, onClose }) {
     ),
   );
 }
-// ---- HUD de estatísticas (só obras com status "Assistido") ----
+// ---- HUD compacto de estatísticas (compartilhado: Mídias e Backlog de jogos) ----
+// items: [{ k, label, short, value, suffix?, color, icon, title?, warn? }] · número em text-2xl, rótulo em text-sm, p-3.
+// 3 blocos: celular com rótulo curto em cima do número; a partir de lg, rótulo e número na mesma linha (~48px de altura).
+// 4 blocos: celular em 2×2 (em linha), tablet 4 colunas empilhadas, telas largas em linha.
+function HudTiles({ items, label, attr }) {
+  let four = items.length >= 4,
+    row = four
+      ? "flex-row items-center justify-between gap-2 sm:flex-col sm:items-start sm:justify-start sm:gap-1 xl:flex-row xl:items-center xl:justify-between xl:gap-3"
+      : "flex-col gap-1 lg:flex-row lg:items-center lg:justify-between lg:gap-3";
+  return HX(
+    "div",
+    {
+      className: `mb-3 grid gap-2 ${four ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`,
+      role: "group",
+      "aria-label": label,
+      ...(attr ? { [attr]: !0 } : {}),
+    },
+    ...items.map((c) =>
+      HX(
+        "div",
+        { key: c.k, className: "relative min-w-0", title: c.title || void 0, style: { filter: `drop-shadow(0 0 6px ${c.color}26)` } },
+        HX("div", { className: "absolute inset-0", style: { clipPath: ot, background: `${c.color}80` } }),
+        HX("div", { className: "absolute bg-[#0a0c12]/95", style: { inset: 1, clipPath: ot } }),
+        HX("div", {
+          "aria-hidden": "true",
+          className: "absolute inset-y-2 left-0 w-[2px]",
+          style: { background: c.color, boxShadow: `0 0 6px ${c.color}` },
+        }),
+        HX(
+          "div",
+          { className: `relative flex min-w-0 p-2 pl-3 lg:p-3 lg:pl-4 ${row}` },
+          HX(
+            "span",
+            {
+              className: "flex min-w-0 items-center gap-1.5 text-[10px] font-semibold uppercase leading-tight tracking-[0.12em] sm:text-xs lg:text-sm lg:tracking-[0.14em]",
+              style: { color: c.color },
+            },
+            HX(c.icon, { size: 15, strokeWidth: 2.2, className: "hidden shrink-0 sm:block" }),
+            HX("span", { className: "truncate sm:hidden" }, c.short || c.label),
+            HX("span", { className: "hidden truncate sm:inline" }, c.label),
+            c.warn &&
+              HX(
+                "span",
+                {
+                  className: "ml-0.5 flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-yellow-400 px-1 text-[9px] font-bold leading-none text-black",
+                  title: c.warn,
+                  "aria-label": c.warn,
+                  [`data-stat-warn-${c.k}`]: !0,
+                },
+                "!",
+              ),
+          ),
+          HX(
+            "span",
+            { className: "flex min-w-0 shrink-0 items-baseline gap-1" },
+            HX(
+              "span",
+              {
+                className: "truncate font-orbit text-xl font-bold leading-none text-zinc-50 sm:text-2xl",
+                style: { textShadow: `0 0 10px ${c.color}99` },
+                [`data-stat-${c.k}`]: !0,
+              },
+              c.value,
+            ),
+            c.suffix && HX("span", { className: "hidden font-orbit text-xs text-zinc-500 sm:inline" }, c.suffix),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+// ---- HUD de estatísticas das mídias (só obras com status "Assistido") ----
 function MediaStats({ stats, total }) {
-  let days = stats.hours / 24,
-    cards = [
+  let days = stats.hours / 24;
+  return HX(HudTiles, {
+    label: "Estat\xEDsticas das obras assistidas",
+    attr: "data-media-stats",
+    items: [
       {
         k: "watched",
         label: "Obras assistidas",
+        short: "Obras",
         value: stats.watched.toLocaleString("pt-BR"),
-        sub: `de ${total} na estante`,
+        suffix: `/${total}`,
+        title: `${stats.watched} de ${total} na estante com status Assistido`,
         color: "#22d3ee",
         icon: Wn,
       },
       {
         k: "eps",
         label: "Epis\xF3dios vistos",
+        short: "Epis\xF3dios",
         value: stats.eps.toLocaleString("pt-BR"),
-        sub: stats.missing ? `${stats.missing} obra${stats.missing === 1 ? "" : "s"} sem n\xBA de epis\xF3dios` : "volume \xFAnico conta 1",
-        warn: stats.missing > 0,
+        title: "Volume \xFAnico conta 1; em epis\xF3dios soma a quantidade de epis\xF3dios",
+        warn: stats.missing ? `${stats.missing} obra${stats.missing === 1 ? "" : "s"} assistida${stats.missing === 1 ? "" : "s"} sem n\xBA de epis\xF3dios` : "",
         color: "#facc15",
         icon: Cf,
       },
       {
         k: "hours",
         label: "Horas assistidas",
+        short: "Horas",
         value: mdHours(stats.hours),
-        sub: days >= 1 ? `≈ ${(Math.round(days * 10) / 10).toLocaleString("pt-BR")} dias de tela` : "soma das dura\xE7\xF5es",
+        title: days >= 1 ? `≈ ${(Math.round(days * 10) / 10).toLocaleString("pt-BR")} dias de tela` : "Soma das dura\xE7\xF5es das obras assistidas",
         color: "#e879f9",
         icon: xf,
       },
-    ];
-  return HX(
-    "div",
-    { className: "mb-4 grid grid-cols-3 gap-2 sm:gap-3", "data-media-stats": !0, role: "group", "aria-label": "Estat\xEDsticas das obras assistidas" },
-    ...cards.map((c) =>
-      HX(
-        "div",
-        { key: c.k, className: "relative min-w-0", style: { filter: `drop-shadow(0 0 10px ${c.color}33)` } },
-        HX("div", { className: "absolute inset-0", style: { clipPath: it, background: `${c.color}99` } }),
-        HX("div", { className: "absolute bg-[#0a0c12]/95", style: { inset: 1.5, clipPath: it } }),
-        HX("div", {
-          "aria-hidden": "true",
-          className: "absolute inset-x-0 top-0 h-[2px]",
-          style: { background: `linear-gradient(90deg,transparent,${c.color},transparent)`, boxShadow: `0 0 8px ${c.color}` },
-        }),
-        HX(
-          "div",
-          { className: "relative flex min-w-0 flex-col px-2.5 py-2.5 sm:px-4 sm:py-3" },
-          HX(
-            "span",
-            { className: "flex min-w-0 items-center gap-1.5 text-[8.5px] font-semibold uppercase leading-tight tracking-[0.18em] sm:text-[10.5px] sm:tracking-[0.24em]", style: { color: c.color } },
-            HX(c.icon, { size: 13, strokeWidth: 2.2, className: "hidden shrink-0 sm:block" }),
-            HX("span", { className: "min-w-0" }, c.label),
-          ),
-          HX(
-            "span",
-            {
-              className: "mt-1 truncate font-orbit text-[21px] font-bold leading-none text-zinc-50 min-[400px]:text-[24px] sm:text-[34px]",
-              style: { textShadow: `0 0 12px ${c.color}aa` },
-              [`data-stat-${c.k}`]: !0,
-            },
-            c.value,
-          ),
-          HX("span", { className: `mt-1.5 text-[9px] leading-tight sm:text-[11px] ${c.warn ? "text-yellow-400/80" : "text-zinc-500"}` }, c.sub),
-        ),
-      ),
-    ),
-  );
+    ],
+  });
 }
 // ---- filtro de status (chip com o LED) ----
 function MdChip({ on, onClick, st, children, label }) {
@@ -12923,7 +12711,7 @@ function MdChip({ on, onClick, st, children, label }) {
       onClick,
       "aria-pressed": on,
       "aria-label": label,
-      className: `flex items-center gap-2 border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 ${
+      className: `flex shrink-0 items-center gap-2 border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 ${
         on ? "border-cyan-400 bg-cyan-400/15 text-cyan-200" : "border-zinc-700 bg-zinc-950/80 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
       }`,
     },
@@ -13032,6 +12820,627 @@ function MediaPage({ items, setItems }) {
           onClose: () => setModal(null),
           onSave: (v) => (editing ? setItems((xs) => xs.map((x) => (x.id === editing.id ? { ...x, ...v } : x))) : setItems((xs) => [...xs, mdNew(v)])),
           onDelete: editing ? () => setItems((xs) => xs.filter((x) => x.id !== editing.id)) : void 0,
+        }),
+      ),
+  );
+}
+
+// ===== BACKLOG DE JOGOS · estante física de loja de games (mesmas prateleiras da aba MÍDIAS) =====
+// Usa o estado global de jogos que já existia (chave "skilltree-games-v1"), sem mudar o formato:
+// games = [{ id, cover (data URL base64), name, genre, hltb (h), time (h), platform, status, date ("AAAA-MM-DD"), rating, difficulty }]
+// status ∈ p2 ("Não Iniciado", "Jogando", "Zerado", "Platinado", "Dropado", "Pausado") ou "" · rating ∈ Z8 · difficulty ∈ Q8
+// LED de status na base da caixa (+ troféu para Platinado)
+var GM_ST = {
+    "": { label: "Sem status", led: "#3f3f46", glow: "none", text: "#71717a" },
+    "N\xE3o Iniciado": { label: "N\xE3o Iniciado", led: "#94a3b8", glow: "0 0 5px rgba(148,163,184,.6)", text: "#cbd5e1" },
+    Jogando: { label: "Jogando", led: "#22d3ee", glow: "0 0 6px #22d3ee, 0 0 12px rgba(34,211,238,.7)", pulse: !0, text: "#22d3ee" },
+    Zerado: { label: "Zerado", led: "#4ade80", glow: "0 0 6px #4ade80, 0 0 12px rgba(74,222,128,.7)", text: "#4ade80" },
+    Platinado: { label: "Platinado", led: "#e0fbff", glow: "0 0 6px #e0fbff, 0 0 14px rgba(165,243,252,.95)", text: "#e0fbff", trophy: !0 },
+    Dropado: { label: "Dropado", led: "#ef4444", glow: "0 0 6px #ef4444, 0 0 12px rgba(239,68,68,.7)", text: "#f87171" },
+    Pausado: { label: "Pausado", led: "#fb923c", glow: "0 0 6px #fb923c, 0 0 12px rgba(251,146,60,.7)", text: "#fb923c" },
+  },
+  gmSt = (s) => GM_ST[s] || GM_ST[""],
+  // tarja da plataforma no topo da caixa (cor por família de console); o texto é o nome digitado na plataforma
+  GM_PLATS = [
+    { k: "ps", re: /\bps ?[1-5]\b|playstation|\bpsp\b|\bvita\b/i, band: "linear-gradient(180deg,#3b82f6 0%,#1d4ed8 55%,#1e40af 100%)", ink: "#eff6ff", plastic: "linear-gradient(160deg,rgba(96,165,250,.36) 0%,rgba(29,78,216,.26) 45%,rgba(30,58,138,.42) 100%)", deep: "#0b1a3a" },
+    { k: "xbox", re: /xbox/i, band: "linear-gradient(180deg,#22c55e 0%,#15803d 100%)", ink: "#f0fdf4", plastic: "linear-gradient(160deg,rgba(74,222,128,.3) 0%,rgba(21,128,61,.24) 45%,rgba(20,83,45,.42) 100%)", deep: "#0a2414" },
+    { k: "switch", re: /switch/i, band: "linear-gradient(180deg,#f87171 0%,#dc2626 55%,#b91c1c 100%)", ink: "#fef2f2", plastic: "linear-gradient(160deg,rgba(248,113,113,.32) 0%,rgba(185,28,28,.26) 45%,rgba(127,29,29,.44) 100%)", deep: "#2a0a0a" },
+    { k: "snes", re: /snes|super ?nintendo/i, band: "linear-gradient(180deg,#a78bfa 0%,#7c3aed 55%,#5b21b6 100%)", ink: "#f5f3ff", plastic: "linear-gradient(160deg,rgba(212,212,216,.3) 0%,rgba(113,113,122,.3) 45%,rgba(63,63,70,.5) 100%)", deep: "#1a1033" },
+    { k: "n64", re: /\bnd?64\b|nintendo ?64/i, band: "linear-gradient(180deg,#52525b 0%,#27272a 100%)", ink: "#fde047", plastic: "linear-gradient(160deg,rgba(113,113,122,.4) 0%,rgba(39,39,42,.6) 45%,rgba(9,9,11,.8) 100%)", deep: "#161616" },
+    { k: "nds", re: /\bn?ds\b|\b3ds\b|nintendo ?ds/i, band: "linear-gradient(180deg,#f4f4f5 0%,#d4d4d8 55%,#a1a1aa 100%)", ink: "#18181b", plastic: "linear-gradient(160deg,rgba(244,244,245,.3) 0%,rgba(161,161,170,.26) 45%,rgba(82,82,91,.44) 100%)", deep: "#15161a" },
+    { k: "sega", re: /\bmg\b|mega ?drive|genesis|sega|master ?system|dreamcast|saturn/i, band: "linear-gradient(180deg,#27272a 0%,#09090b 100%)", ink: "#f87171", plastic: "linear-gradient(160deg,rgba(63,63,70,.55) 0%,rgba(24,24,27,.85) 45%,rgba(9,9,11,.95) 100%)", deep: "#120708" },
+    { k: "pc", re: /\bpc\b|steam|windows|\bepic\b|\bgog\b|computador/i, band: "linear-gradient(180deg,#52525b 0%,#27272a 50%,#09090b 100%)", ink: "#f4f4f5", plastic: "linear-gradient(160deg,rgba(82,82,91,.55) 0%,rgba(24,24,27,.88) 45%,rgba(9,9,11,.96) 100%)", deep: "#101114" },
+    { k: "retro", re: /retro|\bnes\b|atari|game ?boy|\bgba\b|\bgbc\b/i, band: "linear-gradient(180deg,#fbbf24 0%,#d97706 100%)", ink: "#1c1917", plastic: "linear-gradient(160deg,rgba(212,212,216,.3) 0%,rgba(113,113,122,.3) 45%,rgba(63,63,70,.5) 100%)", deep: "#1f1406" },
+  ],
+  GM_PLAT_OTHER = { k: "other", band: "linear-gradient(180deg,#06b6d4 0%,#0e7490 100%)", ink: "#ecfeff", plastic: "linear-gradient(160deg,rgba(103,232,249,.3) 0%,rgba(14,116,144,.26) 45%,rgba(22,78,99,.44) 100%)", deep: "#062028" },
+  GM_PLAT_NONE = { k: "none", band: "linear-gradient(180deg,#3f3f46 0%,#18181b 100%)", ink: "#a1a1aa", plastic: "linear-gradient(160deg,rgba(82,82,91,.4) 0%,rgba(24,24,27,.8) 45%,rgba(9,9,11,.92) 100%)", deep: "#111114" },
+  gmPlat = (p) => {
+    let raw = String(p || "").trim(),
+      retro = /^retro\s*[-–:]\s*/i.test(raw),
+      label = raw.replace(/^retro\s*[-–:]\s*/i, "").toUpperCase(),
+      st = raw ? GM_PLATS.find((x) => x.re.test(raw)) || GM_PLAT_OTHER : GM_PLAT_NONE;
+    return { ...st, label: raw ? label || "RETRO" : "Sem plataforma", retro: retro && !!label };
+  },
+  // "12,5" -> 12.5 (mesma leitura das horas da tabela antiga)
+  gmNum = (v) => Math.max(0, ea(v)),
+  gmHrs = (x) => `${String(Math.round(x * 10) / 10).replace(".", ",")}h`,
+  gmDate = (d) => {
+    let [y, m, dd] = String(d || "").split("-");
+    return y && m && dd ? `${dd}/${m}/${y}` : "";
+  },
+  gmTop = (r) => Oie.includes(r), // notas S (dourado)
+  // capa: data URL base64 (upload) ou link https antigo (a tabela exibia qualquer URL) — sem aspas/parênteses, seguro em url("...")
+  gmCoverOk = (s) => mdCoverOk(s) || /^https?:\/\/[^\s"'()\\<>]+$/i.test(String(s || "")),
+  GM_SORTS = [
+    { id: "shelf", label: "Ordem da estante" },
+    { id: "name", label: "Nome (A–Z)" },
+    { id: "rating", label: "Nota (maior)" },
+    { id: "status", label: "Status" },
+    { id: "platform", label: "Plataforma" },
+    { id: "progress", label: "Progresso (maior)" },
+  ],
+  GM_ST_ORDER = { Jogando: 0, Pausado: 1, "N\xE3o Iniciado": 2, "": 3, Zerado: 4, Platinado: 5, Dropado: 6 };
+// ---- caixa de jogo: estojo de console com tarja da plataforma no topo, LED de status na base e troféu se platinado ----
+function GameCase({ m, w, h, onOpen, preview }) {
+  let st = gmSt(m.status),
+    pl = gmPlat(m.platform),
+    name = String(m.name || "").trim() || "Sem nome",
+    acc = mdAccent(name),
+    cover = gmCoverOk(m.cover) ? m.cover : "",
+    pad = w < 110 ? 2.5 : 3,
+    padB = pad + 2.5, // base mais grossa = trilho do LED
+    band = Math.max(12, Math.round(h * 0.1)), // tarja da plataforma
+    hl = gmNum(m.hltb),
+    tm = gmNum(m.time),
+    pct = hl > 0 ? Math.min(100, Math.round((tm / hl) * 100)) : 0,
+    // título horizontal da capa genérica: cabe a maior palavra na largura; até 4 linhas
+    innerW = w - pad * 2 - 14,
+    words = name.split(/\s+/),
+    longest = Math.max(1, ...words.map((x) => x.length)),
+    fsMax = 15 * Math.min(1, w / 128),
+    fit = (fs) => Math.ceil((name.length * fs * 0.62) / innerW) <= 4,
+    fs = Math.max(8, Math.min(fsMax, innerW / (longest * 0.62)));
+  for (; fs > 8 && !fit(fs); ) fs -= 0.5;
+  fs = Math.round(fs * 10) / 10;
+  let meta = [pl.label, m.genre].filter(Boolean).join(" \xB7 "),
+    prog = hl > 0 ? `${gmHrs(tm)} de ${gmHrs(hl)} (${pct}%)` : tm > 0 ? `${gmHrs(tm)} jogadas` : "",
+    tag = preview ? "div" : "button";
+  return HX(
+    tag,
+    {
+      ...(preview
+        ? { "aria-hidden": "true" }
+        : {
+            type: "button",
+            onClick: () => onOpen(m.id),
+            title: `${name} \xB7 ${pl.label}${m.genre ? ` \xB7 ${m.genre}` : ""} \xB7 ${st.label}`,
+            "aria-label": `${name}, ${pl.label}, ${st.label}${m.rating ? `, nota ${m.rating}` : ""}${prog ? `, ${prog}` : ""}. Abrir para editar`,
+            "data-game": !0,
+            "data-game-id": m.id,
+          }),
+      "data-game-cover": cover ? "1" : "0",
+      "data-game-plat": pl.k,
+      className: `group/game relative block shrink-0 overflow-hidden rounded-[6px] text-left shadow-[inset_0_0_0_1px_rgba(255,255,255,.16),inset_0_1px_0_rgba(255,255,255,.22),2px_4px_10px_rgba(0,0,0,.65)] transition-all duration-200 ease-out ${
+        preview
+          ? ""
+          : "cursor-pointer hover:z-10 hover:-translate-y-3 hover:shadow-[inset_0_0_0_1px_rgba(165,243,252,.9),0_0_16px_3px_rgba(34,211,238,.55),0_12px_20px_rgba(0,0,0,.7)] focus-visible:z-10 focus-visible:-translate-y-3 focus-visible:shadow-[inset_0_0_0_1px_rgba(165,243,252,.9),0_0_16px_3px_rgba(34,211,238,.55)] focus-visible:outline-none motion-reduce:hover:translate-y-0"
+      }`,
+      style: { width: w, height: h, background: pl.plastic },
+    },
+    // encarte (capa) dentro do plástico
+    HX(
+      "span",
+      { className: "absolute overflow-hidden rounded-[4px] bg-zinc-950", style: { top: pad, left: pad, right: pad, bottom: padB } },
+      // arte: imagem enviada ou capa genérica com o nome
+      HX(
+        "span",
+        { className: "absolute inset-x-0 bottom-0", style: { top: band } },
+        cover
+          ? HX("span", { className: "absolute inset-0 bg-cover bg-center", style: { backgroundImage: `url("${cover}")` } })
+          : HX(
+              "span",
+              {
+                className: "absolute inset-0 flex flex-col items-center justify-center overflow-hidden px-[7px] pb-4 pt-5",
+                style: {
+                  background: `repeating-linear-gradient(135deg,rgba(255,255,255,.028) 0 2px,transparent 2px 9px),radial-gradient(circle at 78% 82%,${acc}40 0%,transparent 55%),linear-gradient(165deg,${pl.deep} 0%,#07080c 62%,${acc}26 100%)`,
+                },
+              },
+              HX(Xo, {
+                "aria-hidden": "true",
+                size: Math.round(w * 0.62),
+                strokeWidth: 1.2,
+                className: "pointer-events-none absolute -bottom-3 -right-4 -rotate-12",
+                style: { color: acc, opacity: 0.1 },
+              }),
+              HX(
+                "span",
+                {
+                  className: "relative line-clamp-4 w-full break-words text-center font-bold uppercase leading-[1.08] tracking-[0.03em]",
+                  style: { color: acc, fontSize: fs, textShadow: `0 0 8px ${acc}99` },
+                  "data-game-title": !0,
+                },
+                name,
+              ),
+              m.genre &&
+                HX(
+                  "span",
+                  { className: "relative mt-1.5 w-full truncate text-center text-[8px] font-semibold uppercase leading-[1.4] tracking-[0.14em] text-zinc-400" },
+                  m.genre,
+                ),
+            ),
+      ),
+      // tarja da plataforma (impressa no encarte, como nas caixas de console)
+      HX(
+        "span",
+        {
+          "data-game-band": pl.k,
+          className: "pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between gap-1 overflow-hidden px-1.5",
+          style: { height: band, background: pl.band, color: pl.ink, boxShadow: "inset 0 -1px 0 rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.28)" },
+        },
+        HX(
+          "span",
+          {
+            className: "truncate font-orbit font-black italic leading-[1.3]",
+            style: { fontSize: Math.max(7, Math.round(band * 0.56 * 10) / 10), letterSpacing: pl.label.length > 6 ? "0.04em" : "0.1em" },
+          },
+          pl.label,
+        ),
+        pl.retro &&
+          HX(
+            "span",
+            { className: "shrink-0 rounded-[2px] border px-[3px] text-[6.5px] font-bold uppercase leading-[1.35] tracking-[0.12em]", style: { borderColor: `${pl.ink}88` } },
+            "Retro",
+          ),
+      ),
+    ),
+    // dobradiça e reflexo do plástico
+    HX("span", { "aria-hidden": "true", className: "pointer-events-none absolute w-[5px] rounded-bl-[4px] bg-gradient-to-r from-black/70 to-black/5", style: { top: pad + band, left: pad, bottom: padB } }),
+    HX("span", {
+      "aria-hidden": "true",
+      className: "pointer-events-none absolute inset-0 rounded-[6px]",
+      style: { background: "linear-gradient(115deg,rgba(255,255,255,.17) 0%,rgba(255,255,255,.04) 30%,rgba(255,255,255,0) 44%)" },
+    }),
+    // troféu de platina
+    st.trophy &&
+      HX(
+        "span",
+        {
+          className: "pointer-events-none absolute z-10 flex items-center justify-center rounded-[3px] bg-black/75 p-[3px] text-cyan-50 ring-1 ring-cyan-200/70",
+          style: { top: pad + band + 4, left: pad + 6, boxShadow: "0 0 8px rgba(165,243,252,.85)" },
+          "data-game-trophy": !0,
+          title: "Platinado",
+        },
+        HX(Sr, { size: w < 110 ? 11 : 13, strokeWidth: 2.2 }),
+      ),
+    // nota (SSS … E-)
+    m.rating &&
+      HX(
+        "span",
+        {
+          className: `pointer-events-none absolute z-10 rounded-[3px] bg-black/80 px-1 py-px font-orbit text-[9px] font-bold leading-tight ring-1 ${gmTop(m.rating) ? "text-yellow-300 ring-yellow-400/50" : "text-cyan-200 ring-cyan-400/40"}`,
+          style: { top: pad + band + 4, right: pad + 4 },
+          "data-game-grade": m.rating,
+        },
+        m.rating,
+      ),
+    // ficha que sobe no hover/foco
+    !preview &&
+      HX(
+        "span",
+        {
+          className:
+            "pointer-events-none absolute translate-y-full overflow-hidden rounded-b-[4px] bg-gradient-to-t from-black via-black/95 to-black/75 px-2 pb-2.5 pt-4 opacity-0 transition-all duration-200 group-hover/game:translate-y-0 group-hover/game:opacity-100 group-focus-visible/game:translate-y-0 group-focus-visible/game:opacity-100",
+          style: { left: pad, right: pad, bottom: padB },
+        },
+        HX("span", { className: "block text-[11px] font-bold uppercase leading-tight tracking-wide text-zinc-100 [overflow-wrap:anywhere] line-clamp-2" }, name),
+        HX("span", { className: "mt-0.5 block truncate text-[10px] font-semibold uppercase leading-tight tracking-wider text-sky-300" }, meta),
+        prog &&
+          HX(
+            "span",
+            { className: "mt-1 block" },
+            HX("span", { className: "block text-[10px] leading-tight text-zinc-300" }, prog),
+            hl > 0 &&
+              HX(
+                "span",
+                { className: "mt-0.5 block h-[3px] overflow-hidden rounded-full bg-white/10" },
+                HX("span", { className: "block h-full rounded-full", style: { width: `${pct}%`, background: st.led === "#3f3f46" ? "#22d3ee" : st.led } }),
+              ),
+          ),
+        (m.rating || m.difficulty) &&
+          HX("span", { className: "mt-0.5 block truncate text-[10px] leading-tight text-zinc-400" }, [m.rating && `Nota ${m.rating}`, m.difficulty].filter(Boolean).join(" \xB7 ")),
+        m.date && HX("span", { className: "block text-[10px] leading-tight text-zinc-500" }, `Conclus\xE3o ${gmDate(m.date)}`),
+        HX("span", { className: "mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.18em]", style: { color: st.text } }, st.label),
+      ),
+    // LED de status na base
+    HX("span", {
+      "aria-hidden": "true",
+      className: `pointer-events-none absolute inset-x-[9px] bottom-[1.5px] z-20 h-[2px] rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+      style: { background: st.led, opacity: m.status ? 0.95 : 0.5, boxShadow: st.glow },
+    }),
+    HX("span", {
+      "aria-hidden": "true",
+      "data-game-led": m.status || "none",
+      className: `pointer-events-none absolute z-20 h-[7px] w-[7px] rounded-full ring-1 ring-black/80 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+      style: { background: st.led, boxShadow: st.glow, bottom: padB + 3, right: pad + 3 },
+    }),
+  );
+}
+// ---- modal de edição: TODOS os campos da tabela antiga ----
+function GameModal({ item, onSave, onDelete, onClose }) {
+  let edit = !!item,
+    [f, setF] = (0, K.useState)(() => ({ ...Tie(), ...(item || {}) })),
+    [err, setErr] = (0, K.useState)(""),
+    [delAsk, setDelAsk] = (0, K.useState)(!1),
+    set = (k, v) => (setF((o) => ({ ...o, [k]: v })), setErr("")),
+    hl = gmNum(f.hltb),
+    tm = gmNum(f.time),
+    save = () => {
+      let name = String(f.name || "").trim();
+      if (!name) return setErr("D\xEA um nome ao jogo.");
+      (onSave({
+        name: name.slice(0, 160),
+        genre: String(f.genre || "").slice(0, 160),
+        hltb: String(f.hltb || "").trim().slice(0, 8),
+        time: String(f.time || "").trim().slice(0, 8),
+        platform: String(f.platform || "").trim().slice(0, 40),
+        status: p2.includes(f.status) ? f.status : "",
+        date: /^\d{4}-\d{2}-\d{2}$/.test(f.date) ? f.date : "",
+        rating: Z8.includes(f.rating) ? f.rating : "",
+        difficulty: Q8.includes(f.difficulty) ? f.difficulty : "",
+        cover: f.cover,
+      }),
+        onClose());
+    },
+    lbl = HLBL,
+    sel = `${HIN} cursor-pointer [&>option]:bg-zinc-950 [&>option]:text-cyan-100`,
+    txt = (key, label, extra) =>
+      HX(
+        "label",
+        { className: "block" },
+        HX("span", { className: lbl }, label),
+        HX("input", {
+          type: "text",
+          "aria-label": label,
+          value: f[key] || "",
+          onChange: (ev) => set(key, ev.target.value),
+          className: HIN,
+          ...(extra || {}),
+        }),
+      ),
+    st = gmSt(f.status);
+  (0, K.useEffect)(() => {
+    let k = (ev) => {
+      ev.key === "Escape" && onClose();
+    };
+    return (window.addEventListener("keydown", k), () => window.removeEventListener("keydown", k));
+  }, [onClose]);
+  return HX(
+    "div",
+    {
+      className: "fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": edit ? "Editar jogo" : "Novo jogo",
+      "data-game-modal": !0,
+    },
+    HX("button", { type: "button", className: "fade-in absolute inset-0 cursor-default bg-black/75 backdrop-blur-[3px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX(
+      "div",
+      { className: "pop-in relative max-h-full w-full max-w-2xl overflow-y-auto" },
+      HX("div", { className: "absolute inset-0 bg-cyan-400/80", style: { clipPath: it } }),
+      HX("div", { className: "absolute bg-[#0b0d14]/95", style: { inset: 1.5, clipPath: it } }),
+      HX(
+        "div",
+        { className: "relative p-5" },
+        HX(
+          "div",
+          { className: "flex items-start justify-between gap-3 border-b border-cyan-900/60 pb-3" },
+          HX(
+            "div",
+            {},
+            HX("div", { className: "text-[9px] tracking-[0.35em] text-cyan-500/80" }, "BACKLOG//ESTANTE"),
+            HX("h2", { className: "text-xl font-bold uppercase tracking-[0.12em] text-yellow-400" }, edit ? "Editar jogo" : "Novo jogo"),
+          ),
+          HX(
+            "button",
+            { type: "button", onClick: onClose, "aria-label": "Fechar", className: "p-1.5 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" },
+            HX(Da, { size: 20 }),
+          ),
+        ),
+        HX(
+          "div",
+          { className: "mt-4 flex flex-col gap-5 sm:flex-row" },
+          // prévia ao vivo da caixa
+          HX(
+            "div",
+            { className: "flex shrink-0 flex-col items-center gap-2 sm:w-[150px]", "data-game-preview": !0 },
+            HX(
+              "div",
+              { className: "flex items-end justify-center border-b-4 border-zinc-800 px-3 pt-3 shadow-[0_4px_10px_rgba(0,0,0,0.5)]" },
+              HX(GameCase, { m: f, w: 128, h: 163, preview: !0 }),
+            ),
+            HX("span", { className: "text-[9px] uppercase tracking-[0.25em] text-zinc-500" }, "Pr\xE9-visualiza\xE7\xE3o"),
+            HX(
+              "span",
+              { className: "flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]", style: { color: st.text } },
+              HX("span", { className: `h-2 w-2 rounded-full ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`, style: { background: st.led, boxShadow: st.glow } }),
+              st.label,
+            ),
+          ),
+          HX(
+            "div",
+            { className: "grid min-w-0 flex-1 grid-cols-2 gap-x-3 gap-y-3" },
+            HX(
+              "label",
+              { className: "col-span-2 block" },
+              HX("span", { className: lbl }, "Nome do jogo"),
+              HX("input", {
+                autoFocus: !0,
+                type: "text",
+                "aria-label": "Nome do jogo",
+                value: f.name,
+                maxLength: 160,
+                placeholder: "Ex.: Cyberpunk 2077",
+                onChange: (ev) => set("name", ev.target.value),
+                onKeyDown: (ev) => {
+                  ev.key === "Enter" && save();
+                },
+                className: `${HIN} font-semibold text-yellow-200`,
+              }),
+            ),
+            txt("genre", "G\xEAnero / Tipo", { maxLength: 160, placeholder: "Ex.: Survival horror" }),
+            txt("platform", "Plataforma", { maxLength: 40, list: "gm-plat-list", placeholder: "PS5, PC, Switch…" }),
+            HX("datalist", { id: "gm-plat-list" }, ...Mie.map((o) => HX("option", { key: o, value: o }))),
+            txt("hltb", "How long to beat (h)", { inputMode: "decimal", maxLength: 8, placeholder: "—", className: `${HIN} font-orbit` }),
+            txt("time", "Tempo atual (h)", { inputMode: "decimal", maxLength: 8, placeholder: "—", className: `${HIN} font-orbit` }),
+            hl > 0 &&
+              HX(
+                "div",
+                { className: "col-span-2 -mt-1", "data-game-progress": !0 },
+                HX(
+                  "div",
+                  { className: "flex justify-between text-[11px] text-zinc-500" },
+                  HX("span", {}, `Progresso: ${gmHrs(tm)} de ${gmHrs(hl)}`),
+                  HX("span", { className: "font-orbit text-cyan-300" }, `${Math.min(100, Math.round((tm / hl) * 100))}%`),
+                ),
+                HX(
+                  "div",
+                  { className: "mt-1 h-1 overflow-hidden rounded-full bg-white/10" },
+                  HX("div", { className: "h-full rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,.8)]", style: { width: `${Math.min(100, (tm / hl) * 100)}%` } }),
+                ),
+              ),
+            HX(
+              "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Status"),
+              HX(
+                "select",
+                { "aria-label": "Status do jogo", value: f.status || "", onChange: (ev) => set("status", ev.target.value), className: `${sel} font-semibold uppercase tracking-wider`, style: { color: st.text } },
+                HX("option", { value: "" }, "—"),
+                ...p2.map((o) => HX("option", { key: o, value: o }, o)),
+              ),
+            ),
+            HX(
+              "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Data de conclus\xE3o"),
+              HX("input", {
+                type: "date",
+                "aria-label": "Data de conclus\xE3o",
+                value: f.date || "",
+                onChange: (ev) => set("date", ev.target.value),
+                className: `${HIN} font-orbit text-[12px]`,
+              }),
+            ),
+            HX(
+              "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Nota"),
+              HX(
+                "select",
+                {
+                  "aria-label": "Nota",
+                  value: f.rating || "",
+                  onChange: (ev) => set("rating", ev.target.value),
+                  className: `${sel} font-orbit font-bold`,
+                  style: { color: gmTop(f.rating) ? "#facc15" : f.rating ? "#67e8f9" : void 0 },
+                },
+                HX("option", { value: "" }, "—"),
+                ...Z8.map((o) => HX("option", { key: o, value: o }, o)),
+              ),
+            ),
+            HX(
+              "label",
+              { className: "block" },
+              HX("span", { className: lbl }, "Dificuldade"),
+              HX(
+                "select",
+                { "aria-label": "Dificuldade", value: f.difficulty || "", onChange: (ev) => set("difficulty", ev.target.value), className: `${sel} uppercase tracking-wide` },
+                HX("option", { value: "" }, "—"),
+                ...Q8.map((o) => HX("option", { key: o, value: o }, o)),
+              ),
+            ),
+            HX(
+              "div",
+              { className: "col-span-2" },
+              HX("span", { className: lbl }, "Capa / thumbnail"),
+              HX(Od, { variant: "full", value: f.cover, onChange: (v) => set("cover", v), label: "Capa do jogo", maxDim: 360, quality: 0.82 }),
+            ),
+          ),
+        ),
+        err && HX("p", { className: "mt-3 text-[12px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+        HX(
+          "div",
+          { className: "mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4" },
+          edit && onDelete
+            ? delAsk
+              ? HX(HBtn, { tone: "danger", onClick: () => (onDelete(), onClose()), label: "Confirmar exclus\xE3o do jogo" }, HX(yt, { size: 13 }), "Excluir de vez")
+              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir jogo" }, HX(yt, { size: 13 }), "Excluir")
+            : HX("span", {}),
+          HX(ye, { variant: "primary", onClick: save }, HX(edit ? ls : gt, { size: 15, strokeWidth: 2.5 }), edit ? "Salvar" : "Cadastrar"),
+        ),
+      ),
+    ),
+  );
+}
+// ---- página da aba BACKLOG DE JOGOS ----
+function GamesPage({ games, setGames }) {
+  let [modal, setModal] = (0, K.useState)(null),
+    [filter, setFilter] = (0, K.useState)("all"),
+    [platF, setPlatF] = (0, K.useState)("all"),
+    [q, setQ] = (0, K.useState)(""),
+    [sort, setSort] = (0, K.useState)("shelf"),
+    // contadores (recalculados só quando a lista muda)
+    platinas = (0, K.useMemo)(() => games.filter((g) => g.status === "Platinado").length, [games]),
+    stats = (0, K.useMemo)(
+      () => ({
+        zerados: games.filter((g) => g.status === "Zerado" || g.status === "Platinado").length,
+        jogando: games.filter((g) => g.status === "Jogando").length,
+        horas: games.reduce((a, g) => a + ea(g.time), 0),
+        counts: ["", ...p2].reduce((o, s) => ((o[s] = games.filter((g) => (g.status || "") === s).length), o), {}),
+      }),
+      [games],
+    ),
+    plats = (0, K.useMemo)(() => {
+      let c = {};
+      for (let g of games) {
+        let p = String(g.platform || "").trim().toUpperCase();
+        c[p] = (c[p] || 0) + 1;
+      }
+      return Object.entries(c).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    }, [games]),
+    term = q.trim().toLowerCase(),
+    shown = games
+      .filter((g) => {
+        if (filter === "none" ? g.status !== "" : filter !== "all" && g.status !== filter) return !1;
+        if (platF !== "all" && String(g.platform || "").trim().toUpperCase() !== platF) return !1;
+        return !term || `${g.name} ${g.genre} ${g.platform}`.toLowerCase().includes(term);
+      })
+      .map((m, i) => ({ m, i })),
+    editing = modal && modal.id ? games.find((g) => g.id === modal.id) : null,
+    zi = (r) => (Z8.includes(r) ? Z8.indexOf(r) : -1);
+  sort === "name"
+    ? shown.sort((a, b) => String(a.m.name).localeCompare(String(b.m.name), "pt-BR", { sensitivity: "base" }))
+    : sort === "rating"
+      ? shown.sort((a, b) => zi(b.m.rating) - zi(a.m.rating) || a.i - b.i)
+      : sort === "status"
+        ? shown.sort((a, b) => (GM_ST_ORDER[a.m.status || ""] ?? 9) - (GM_ST_ORDER[b.m.status || ""] ?? 9) || a.i - b.i)
+        : sort === "platform"
+          ? shown.sort((a, b) => String(a.m.platform || "￿").localeCompare(String(b.m.platform || "￿"), "pt-BR", { sensitivity: "base" }) || a.i - b.i)
+          : sort === "progress" &&
+            shown.sort((a, b) => {
+              let p = (g) => (gmNum(g.hltb) > 0 ? gmNum(g.time) / gmNum(g.hltb) : -1);
+              return p(b.m) - p(a.m) || a.i - b.i;
+            });
+  let list = shown.map((x) => x.m),
+    noFilter = filter === "all" && platF === "all" && !term,
+    open = (id) => setModal({ id }),
+    add = () => setModal({ id: null }),
+    ctl = "shrink-0 cursor-pointer border border-red-900/80 bg-[#0a0507] px-2 py-1.5 text-[13px] text-cyan-100 [color-scheme:dark] focus:border-cyan-400 focus:outline-none [&>option]:bg-zinc-950";
+  return HX(
+    "div",
+    { className: "min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-8", "data-games-page": !0 },
+    HX(Pd, {
+      icon: Xo,
+      title: "Backlog de jogos",
+      sub: `Estante de jogos \xB7 ${games.length} jogo${games.length === 1 ? "" : "s"} \xB7 jogos a zerar`,
+      right: HX(
+        "span",
+        { className: "flex flex-wrap items-center gap-3" },
+        // contador de platinas (mantido no topo)
+        HX(
+          "span",
+          { className: "relative", "data-platinas": !0, "aria-label": `Platinas: ${platinas}` },
+          HX("span", { className: "absolute inset-0", style: { clipPath: ot, background: "#a5f3fc" } }),
+          HX("span", { className: "absolute bg-[#0b2a31]", style: { inset: 1.5, clipPath: ot } }),
+          HX(
+            "span",
+            { className: "relative flex items-center gap-2.5 px-4 py-1.5", style: { filter: "drop-shadow(0 0 8px rgba(165,243,252,.55))" } },
+            HX(Sr, { size: 22, strokeWidth: 1.7, className: "text-cyan-100" }),
+            HX("span", { className: "text-[10px] font-semibold uppercase leading-none tracking-[0.25em] text-cyan-200" }, "Platinas"),
+            HX(
+              "span",
+              { className: "font-orbit text-[26px] leading-none text-white", style: { textShadow: "0 0 12px rgba(165,243,252,.9)" }, "data-platinas-value": !0 },
+              platinas,
+            ),
+          ),
+        ),
+        HX(ye, { variant: "primary", onClick: add }, HX(gt, { size: 15, strokeWidth: 3 }), "Novo jogo"),
+      ),
+    }),
+    // HUD compacto (mesmo componente da aba Mídias)
+    HX(HudTiles, {
+      label: "Estat\xEDsticas do backlog",
+      attr: "data-games-stats",
+      items: [
+        { k: "games", label: "Jogos", short: "Jogos", value: games.length.toLocaleString("pt-BR"), color: "#facc15", icon: Xo, title: "Jogos na estante" },
+        { k: "done", label: "Zerados", short: "Zerados", value: stats.zerados.toLocaleString("pt-BR"), color: "#4ade80", icon: Wn, title: "Zerados + platinados" },
+        { k: "playing", label: "Jogando", short: "Jogando", value: stats.jogando.toLocaleString("pt-BR"), color: "#22d3ee", icon: Wo, title: "Com status Jogando" },
+        { k: "hours", label: "Horas jogadas", short: "Horas", value: gmHrs(stats.horas), color: "#e879f9", icon: xf, title: "Soma do tempo atual de todos os jogos" },
+      ],
+    }),
+    // filtros por status (LEDs com a mesma cor da caixa), plataforma, busca e ordenação
+    HX(
+      "div",
+      // celular: uma faixa rolável (8 filtros não viram 4 linhas); telas maiores: quebra de linha normal
+      {
+        className: "-mx-4 mb-3 flex items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden",
+        role: "group",
+        "aria-label": "Filtrar por status",
+        "data-games-chips": !0,
+      },
+      HX(MdChip, { on: filter === "all", onClick: () => setFilter("all"), label: "Filtro Todos" }, `Todos \xB7 ${games.length}`),
+      ...p2.map((s) =>
+        HX(MdChip, { key: s, on: filter === s, onClick: () => setFilter(filter === s ? "all" : s), st: GM_ST[s], label: `Filtro ${s}` }, `${s} \xB7 ${stats.counts[s]}`),
+      ),
+      HX(MdChip, { on: filter === "none", onClick: () => setFilter(filter === "none" ? "all" : "none"), st: GM_ST[""], label: "Filtro Sem status" }, `Sem status \xB7 ${stats.counts[""]}`),
+    ),
+    HX(
+      "div",
+      { className: "mb-4 flex w-full min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end" },
+      HX(
+        "label",
+        { className: "relative min-w-0 flex-1 basis-full sm:w-72 sm:flex-none sm:basis-auto" },
+        HX(ss, { size: 14, className: "pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" }),
+        HX("input", {
+          type: "search",
+          "aria-label": "Buscar jogo",
+          value: q,
+          placeholder: "Buscar jogo, g\xEAnero, plataforma…",
+          onChange: (ev) => setQ(ev.target.value),
+          className: `${HIN} pl-8`,
+        }),
+      ),
+      HX(
+        "select",
+        { "aria-label": "Filtrar por plataforma", value: platF, onChange: (ev) => setPlatF(ev.target.value), className: `${ctl} min-w-0 flex-1 sm:flex-none` },
+        HX("option", { value: "all" }, "Todas as plataformas"),
+        ...plats.map(([p, n]) => HX("option", { key: p || "_none", value: p }, `${p || "Sem plataforma"} (${n})`)),
+      ),
+      HX(
+        "select",
+        { "aria-label": "Ordenar estante", value: sort, onChange: (ev) => setSort(ev.target.value), className: `${ctl} min-w-0 flex-1 sm:flex-none` },
+        ...GM_SORTS.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+      ),
+    ),
+    games.length === 0 &&
+      HX("p", { className: "mb-3 text-center text-[13px] uppercase tracking-[0.2em] text-cyan-200/70" }, 'Backlog vazio \xB7 use "Novo jogo"'),
+    games.length > 0 &&
+      list.length === 0 &&
+      HX("p", { className: "mb-3 text-center text-[13px] uppercase tracking-[0.2em] text-zinc-500" }, "Nenhum jogo encontrado com esse filtro"),
+    HX(MediaShelf, { items: list, onOpen: open, onAdd: add, showAdd: noFilter, Case: GameCase, ratio: 1.27, addLabel: "Novo jogo", addFirst: !0, name: "games" }),
+    modal &&
+      kbPortal(
+        HX(GameModal, {
+          key: modal.id || "new",
+          item: editing,
+          onClose: () => setModal(null),
+          onSave: (v) =>
+            editing
+              ? setGames((xs) => xs.map((x) => (x.id === editing.id ? { ...x, ...v } : x)))
+              : // jogo novo entra no começo da lista (como o "Novo jogo" da tabela) e os filtros são limpos para ele aparecer
+                (setGames((xs) => [{ ...Tie(), ...v }, ...xs]), setFilter("all"), setPlatF("all"), setQ("")),
+          onDelete: editing ? () => setGames((xs) => xs.filter((x) => x.id !== editing.id)) : void 0,
         }),
       ),
   );
@@ -13836,7 +14245,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
               }),
             n === "fin" &&
               (0, u.jsx)(mle, { finance: s, setFinance: c, money: B.money, setMoney: b2, wishlist: m, setWishlist: x }),
-            n === "games" && (0, u.jsx)(Mle, { games: f, setGames: d }),
+            n === "games" && (0, u.jsx)(GamesPage, { games: f, setGames: d }),
             n === "pc" && (0, u.jsx)(ble, { setup: w, setSetup: g }),
             n === "read" && (0, u.jsx)(yle, { pages: L, setPages: h, bg: y, setBg: S }),
             n === "plan" && (0, u.jsx)(Nle, { plan: A, setPlan: _ }),
