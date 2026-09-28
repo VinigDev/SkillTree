@@ -110,6 +110,8 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     'skilltree-games-v1': 'Backlog de jogos',
     'skilltree-media-v1': 'Mídias (estante de DVDs)',
     'skilltree-timeline-v1': 'Linha do tempo (memórias)',
+    'skilltree-points-v1': 'Pontos (extrato de ganhos e resgates)',
+    'skilltree-rewards-v1': 'Loja de recompensas',
     'skilltree-fin-v1': 'Finanças',
     'skilltree-wishlist-v1': 'Backlog de produtos',
     'skilltree-pc-v1': 'Meu PC',
@@ -2190,10 +2192,11 @@ function Pie() {
   }
 }
 // "Não Iniciado": cinza-claro translúcido para se diferenciar de "Jogando" (ciano) e "Platinado" (branco-gelo)
-var p2 = ["N\xE3o Iniciado", "Jogando", "Zerado", "Platinado", "Dropado", "Pausado"],
+var p2 = ["N\xE3o Iniciado", "Jogando", "Jogo Eterno", "Zerado", "Platinado", "Dropado", "Pausado"],
   Aie = {
     "N\xE3o Iniciado": "rgba(226,232,240,.55)",
     Jogando: "#22d3ee",
+    "Jogo Eterno": "#a855f7",
     Zerado: "#facc15",
     Platinado: "#e0fbff",
     Dropado: "#ef4444",
@@ -11367,7 +11370,7 @@ function HabitModal({ habit, onSave, onDelete, onClose }) {
   );
 }
 // ---- cartão do hábito ----
-function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
+function HabitCard({ h, today, onCheck, onUndo, onEdit, gain }) {
   let done = !!h.lastCheckedDate && h.lastCheckedDate >= today,
     missed = done ? 0 : hbMissed(h.lastCheckedDate, today), // dias sem check-in (cada um tira 1 dia da ofensiva)
     streak = hbEff(h, today), // ofensiva de hoje, já com o decaimento
@@ -11477,10 +11480,22 @@ function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
         ),
       ),
     ),
-    // check-in
+    // check-in (+pontos)
     HX(
       "div",
-      { className: "mt-auto px-4 pb-4 pt-3" },
+      { className: "relative mt-auto px-4 pb-4 pt-3" },
+      gain &&
+        HX(
+          "span",
+          {
+            key: gain,
+            "aria-hidden": "true",
+            className: "hb-gain pointer-events-none absolute left-1/2 top-0 z-10 whitespace-nowrap font-orbit text-[18px] font-black text-yellow-300",
+            style: { textShadow: "0 0 12px rgba(250,204,21,.9), 0 0 24px rgba(250,204,21,.5)" },
+            "data-hb-gain": !0,
+          },
+          `+${RW_CHECKIN} PTS`,
+        ),
       done
         ? HX(
             "div",
@@ -11514,56 +11529,108 @@ function HabitCard({ h, today, onCheck, onUndo, onEdit }) {
               type: "button",
               onClick: () => onCheck(h.id),
               "data-hb-check": h.id,
+              title: `Check-in de hoje \xB7 +${RW_CHECKIN} pontos no saldo`,
               className:
-                "w-full border-2 border-dashed border-lime-400 py-2.5 text-[12px] font-bold uppercase tracking-[0.2em] text-lime-300 transition-all hover:scale-[1.02] hover:border-solid hover:bg-lime-400 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
+                "group w-full border-2 border-dashed border-lime-400 py-2.5 text-[12px] font-bold uppercase tracking-[0.2em] text-lime-300 transition-all hover:scale-[1.02] hover:border-solid hover:bg-lime-400 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
             },
             "[ Check-in di\xE1rio ]",
+            HX("span", { className: "ml-2 font-orbit text-[10px] tracking-normal text-yellow-300/90 group-hover:text-black" }, `+${RW_CHECKIN}`),
           ),
     ),
   );
 }
 // ---- página da aba HÁBITOS ----
-function HabitsPage({ habits, setHabits, today }) {
+function HabitsPage({ habits, setHabits, today, ledger, setLedger, rewardPoints, rewards, setRewards }) {
   let [modal, setModal] = (0, K.useState)(null),
+    [hist, setHist] = (0, K.useState)(!1),
+    [toast, setToast] = (0, K.useState)(null),
+    [gains, setGains] = (0, K.useState)({}), // "+10 PTS" subindo nos cartões que acabaram de fazer check-in
     doneToday = habits.filter((h) => h.lastCheckedDate === today).length,
     best = habits.reduce((m, h) => Math.max(m, h.best || 0), 0),
+    stats = (0, K.useMemo)(() => rwStats(ledger, today), [ledger, today]),
+    points = rewardPoints,
     upd = (id, fn) => setHabits((hs) => hs.map((h) => (h.id === id ? fn(h) : h))),
-    editing = modal && modal.id ? habits.find((h) => h.id === modal.id) : null;
+    editing = modal && modal.id ? habits.find((h) => h.id === modal.id) : null,
+    // CHECK-IN: ofensiva +1 e +10 pontos (1x por hábito por dia: clique duplo ou outro aparelho não pontuam de novo)
+    check = (id) => {
+      let h = habits.find((x) => x.id === id);
+      if (!h || (h.lastCheckedDate && hbDays(h.lastCheckedDate, today) <= 0)) return;
+      upd(id, (x) => hbCheckIn(x, today));
+      setLedger((l) => (rwHasCheck(l, id, today) ? l : [...l, rwEntry({ k: "c", d: RW_CHECKIN, h: id, day: today, n: String(h.name || "").slice(0, 80) })]));
+      let k = Date.now();
+      setGains((g) => ({ ...g, [id]: k }));
+      setTimeout(() => setGains((g) => (g[id] === k ? (({ [id]: _, ...rest }) => rest)(g) : g)), 1500);
+    },
+    // DESFAZER o check-in de hoje devolve os pontos dele
+    undo = (id) => {
+      let h = habits.find((x) => x.id === id);
+      if (!h || h.lastCheckedDate !== today || !h.prev) return;
+      upd(id, (x) => hbUndo(x, today));
+      setLedger((l) => l.filter((e) => !(e.k === "c" && e.h === id && e.day === today)));
+    },
+    // RESGATE: só com saldo suficiente (conferido de novo sobre o extrato mais recente, contra clique duplo)
+    redeem = (r) => {
+      if (points < r.custo) return !1;
+      let e = rwEntry({ k: "r", d: -r.custo, r: r.id, n: r.nome });
+      setLedger((l) => (rwStats(l).bal >= r.custo ? [...l, e] : l));
+      setToast({ id: e.id, nome: r.nome, custo: r.custo });
+      return !0;
+    },
+    undoRedeem = () => toast && (setLedger((l) => l.filter((e) => e.id !== toast.id)), setToast(null)),
+    goStore = () => {
+      let el = document.getElementById("rw-store");
+      if (el)
+        try {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch {
+          el.scrollIntoView();
+        }
+    };
   return HX(
     "div",
     { className: "min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-8", "data-habits": !0 },
+    HX("style", {}, RW_CSS),
     HX(Pd, {
       icon: pd,
       title: "H\xE1bitos",
       sub: `Ofensivas di\xE1rias \xB7 ${doneToday}/${habits.length} hoje \xB7 recorde ${best} dia${best === 1 ? "" : "s"}`,
       right: HX(ye, { variant: "primary", onClick: () => setModal({ id: null }) }, HX(gt, { size: 15, strokeWidth: 3 }), "Novo h\xE1bito"),
     }),
-    habits.length === 0
-      ? HX(
-          "div",
-          { className: "flex flex-col items-center justify-center gap-4 border border-dashed border-lime-500/40 bg-black/30 px-6 py-12 text-center" },
-          HX("div", { className: "h-40 w-52" }, HX(HabitTree, { streak: 0, uid: "empty" })),
-          HX(
-            "p",
-            { className: "max-w-md text-[13px] uppercase tracking-[0.2em] text-lime-200/80" },
-            "Plante o primeiro h\xE1bito \xB7 a \xE1rvore cresce a cada dia seguido de check-in",
+    HX(RwBalance, { points, stats, histOpen: hist, onHistory: () => setHist((v) => !v), onStore: goStore }),
+    hist && HX(RwHistory, { ledger, habits }),
+    HX(
+      "div",
+      { className: "grid gap-6 xl:grid-cols-[minmax(0,1fr)_370px]" },
+      habits.length === 0
+        ? HX(
+            "div",
+            { className: "flex flex-col items-center justify-center gap-4 self-start border border-dashed border-lime-500/40 bg-black/30 px-6 py-12 text-center" },
+            HX("div", { className: "h-40 w-52" }, HX(HabitTree, { streak: 0, uid: "empty" })),
+            HX(
+              "p",
+              { className: "max-w-md text-[13px] uppercase tracking-[0.2em] text-lime-200/80" },
+              "Plante o primeiro h\xE1bito \xB7 a \xE1rvore cresce a cada dia seguido de check-in",
+            ),
+            HX(ye, { variant: "primary", onClick: () => setModal({ id: null }) }, HX(gt, { size: 15, strokeWidth: 3 }), "Criar h\xE1bito"),
+          )
+        : HX(
+            "div",
+            { className: "grid content-start gap-4 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]", "data-habits-grid": !0 },
+            ...habits.map((h) =>
+              HX(HabitCard, {
+                key: h.id,
+                h,
+                today,
+                gain: gains[h.id],
+                onCheck: check,
+                onUndo: undo,
+                onEdit: (id) => setModal({ id }),
+              }),
+            ),
           ),
-          HX(ye, { variant: "primary", onClick: () => setModal({ id: null }) }, HX(gt, { size: 15, strokeWidth: 3 }), "Criar h\xE1bito"),
-        )
-      : HX(
-          "div",
-          { className: "grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]", "data-habits-grid": !0 },
-          ...habits.map((h) =>
-            HX(HabitCard, {
-              key: h.id,
-              h,
-              today,
-              onCheck: (id) => upd(id, (x) => hbCheckIn(x, today)),
-              onUndo: (id) => upd(id, (x) => hbUndo(x, today)),
-              onEdit: (id) => setModal({ id }),
-            }),
-          ),
-        ),
+      HX(RewardStore, { rewards, setRewards, points, redeemed: stats.redeemed, onRedeem: redeem }),
+    ),
+    toast && kbPortal(HX(RwToast, { key: toast.id, toast, onUndo: undoRedeem, onClose: () => setToast(null) })),
     modal &&
       kbPortal(
         HX(HabitModal, {
@@ -12831,12 +12898,14 @@ function MediaPage({ items, setItems }) {
 // ===== BACKLOG DE JOGOS · biblioteca em grade (organização inspirada na Steam, visual do OS Pessoal Cyberpunk) =====
 // Usa o estado global de jogos que já existia (chave "skilltree-games-v1"), sem mudar o formato:
 // games = [{ id, cover (data URL base64 ou link https), name, genre, hltb (h), time (h), platform, status, date ("AAAA-MM-DD"), rating, difficulty }]
-// status ∈ p2 ("Não Iniciado", "Jogando", "Zerado", "Platinado", "Dropado", "Pausado") ou "" · rating ∈ Z8 · difficulty ∈ Q8
+// status ∈ p2 ("Não Iniciado", "Jogando", "Jogo Eterno", "Zerado", "Platinado", "Dropado", "Pausado") ou "" · rating ∈ Z8 · difficulty ∈ Q8
 // Status na capa: LED redondo no canto inferior esquerdo (troféu = Platinado, verde = Zerado, vermelho = Dropado…)
+// "Jogo Eterno" (jogo sem fim: online, sandbox, esporte…): moldura roxa néon, brilho pulsante e LED com ∞
 var GM_ST = {
     "": { label: "Sem status", led: "#3f3f46", glow: "none", text: "#a1a1aa" },
     "N\xE3o Iniciado": { label: "N\xE3o Iniciado", led: "#94a3b8", glow: "0 0 5px rgba(148,163,184,.6)", text: "#cbd5e1" },
     Jogando: { label: "Jogando", led: "#22d3ee", glow: "0 0 6px #22d3ee, 0 0 12px rgba(34,211,238,.7)", pulse: !0, text: "#22d3ee" },
+    "Jogo Eterno": { label: "Jogo Eterno", led: "#a855f7", glow: "0 0 6px #a855f7, 0 0 14px rgba(192,132,252,.9)", text: "#c084fc", eternal: !0 },
     Zerado: { label: "Zerado", led: "#4ade80", glow: "0 0 6px #4ade80, 0 0 12px rgba(74,222,128,.7)", text: "#4ade80" },
     Platinado: { label: "Platinado", led: "#e0fbff", glow: "0 0 6px #e0fbff, 0 0 14px rgba(165,243,252,.95)", text: "#e0fbff", trophy: !0 },
     Dropado: { label: "Dropado", led: "#ef4444", glow: "0 0 6px #ef4444, 0 0 12px rgba(239,68,68,.7)", text: "#f87171" },
@@ -12894,7 +12963,14 @@ var GM_ST = {
     { id: "status", label: "Status" },
     { id: "platform", label: "Plataforma" },
   ],
-  GM_ST_ORDER = { Jogando: 0, Pausado: 1, "N\xE3o Iniciado": 2, "": 3, Zerado: 4, Platinado: 5, Dropado: 6 },
+  GM_ST_ORDER = { Jogando: 0, "Jogo Eterno": 1, Pausado: 2, "N\xE3o Iniciado": 3, "": 4, Zerado: 5, Platinado: 6, Dropado: 7 },
+  // brilho roxo pulsante do "Jogo Eterno" (moldura da capa e LED)
+  GM_CSS =
+    "@keyframes gmeternal{0%,100%{filter:drop-shadow(0 0 3px rgba(168,85,247,.6)) drop-shadow(0 0 8px rgba(168,85,247,.3))}50%{filter:drop-shadow(0 0 6px rgba(192,132,252,.95)) drop-shadow(0 0 16px rgba(168,85,247,.75))}}" +
+    ".gm-eternal{animation:gmeternal 2.8s ease-in-out infinite}" +
+    "@keyframes gmled{0%,100%{box-shadow:0 0 4px #a855f7,0 0 8px rgba(168,85,247,.45)}50%{box-shadow:0 0 8px #c084fc,0 0 18px rgba(192,132,252,.95)}}" +
+    ".gm-eternal-led{animation:gmled 2.8s ease-in-out infinite}" +
+    "@media (prefers-reduced-motion:reduce){.gm-eternal{animation:none;filter:drop-shadow(0 0 5px rgba(168,85,247,.8))}.gm-eternal-led{animation:none}}",
   // tamanho das capas (largura mínima em px)
   GM_ZOOM = [96, 124, 152, 184, 220],
   GM_ZOOM_KEY = "stui-games-zoom", // preferência deste aparelho: fora do prefixo skilltree- (não entra no backup/sincronização)
@@ -12914,6 +12990,17 @@ function GmStIcon({ s, size = 12 }) {
   let svg = (...c) => HX("svg", { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": "true" }, ...c);
   return s === "Platinado"
     ? HX(Sr, { size, strokeWidth: 2.4 })
+    : s === "Jogo Eterno"
+      ? svg(
+          HX("path", {
+            d: "M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z",
+            fill: "none",
+            stroke: "currentColor",
+            strokeWidth: 2.8,
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+          }),
+        )
     : s === "Zerado"
       ? HX(Wn, { size, strokeWidth: 3.2 })
       : s === "Dropado"
@@ -12937,7 +13024,9 @@ function GameCapsule({ m, w, onOpen, onHover, preview }) {
     tm = gmNum(m.time),
     pct = hl > 0 ? Math.min(100, Math.round((tm / hl) * 100)) : 0,
     small = w < 150,
-    date = gmSteamDate(m.date, small),
+    dLong = gmSteamDate(m.date),
+    // data longa ("5 de dez. de 2025") só quando cabe entre o LED e a margem; senão a curta ("05/12/25", "20 set.")
+    date = small || (dLong && dLong.length * 7.2 + 14 > w - 58) ? gmSteamDate(m.date, !0) : dLong,
     // título da capa genérica: a maior palavra cabe na largura, até 4 linhas
     innerW = Math.max(40, w - 24),
     longest = Math.max(1, ...name.split(/\s+/).map((x) => x.length)),
@@ -12975,11 +13064,23 @@ function GameCapsule({ m, w, onOpen, onHover, preview }) {
           : "cursor-pointer hover:z-10 hover:-translate-y-1.5 hover:drop-shadow-[0_0_12px_rgba(34,211,238,.55)] focus-visible:z-10 focus-visible:-translate-y-1.5 focus-visible:outline-none focus-visible:drop-shadow-[0_0_14px_rgba(34,211,238,.75)] motion-reduce:hover:translate-y-0"
       }`,
     },
-    // moldura: filete neon (ciano → vermelho) que acende em ciano no hover/foco
+    // Jogo Eterno: brilho roxo pulsante em volta da capa (segue o recorte chanfrado)
+    st.eternal &&
+      HX(
+        "span",
+        { "aria-hidden": "true", className: "gm-eternal pointer-events-none absolute inset-0", "data-game-eternal": !0 },
+        HX("span", { className: "absolute inset-0", style: { clipPath: GM_CUT, background: "#a855f7" } }),
+      ),
+    // moldura: filete neon (ciano → vermelho; roxo no Jogo Eterno) que acende em ciano no hover/foco
     HX("span", {
       "aria-hidden": "true",
       className: "absolute inset-0",
-      style: { clipPath: GM_CUT, background: "linear-gradient(160deg,rgba(34,211,238,.5) 0%,rgba(127,29,29,.75) 55%,rgba(250,204,21,.35) 100%)" },
+      style: {
+        clipPath: GM_CUT,
+        background: st.eternal
+          ? "linear-gradient(160deg,#e879f9 0%,#a855f7 45%,#7c3aed 75%,#c084fc 100%)"
+          : "linear-gradient(160deg,rgba(34,211,238,.5) 0%,rgba(127,29,29,.75) 55%,rgba(250,204,21,.35) 100%)",
+      },
     }),
     HX("span", {
       "aria-hidden": "true",
@@ -13081,7 +13182,7 @@ function GameCapsule({ m, w, onOpen, onHover, preview }) {
                   "data-game-led": m.status,
                   "data-game-trophy": st.trophy ? !0 : void 0,
                   title: st.label,
-                  className: `flex shrink-0 items-center justify-center rounded-full border-[1.5px] bg-black/80 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : ""}`,
+                  className: `flex shrink-0 items-center justify-center rounded-full border-[1.5px] bg-black/80 ${st.pulse ? "animate-pulse motion-reduce:animate-none" : st.eternal ? "gm-eternal-led" : ""}`,
                   style: { width: circ, height: circ, borderColor: st.led, color: st.led, boxShadow: st.glow },
                 },
                 HX(GmStIcon, { s: m.status, size: small ? 10 : 12 }),
@@ -13090,6 +13191,17 @@ function GameCapsule({ m, w, onOpen, onHover, preview }) {
           HX(
             "span",
             { className: "flex min-w-0 flex-1 justify-center px-1" },
+            !date &&
+              st.eternal &&
+              HX(
+                "span",
+                {
+                  "data-game-eternal-tag": !0,
+                  className: `truncate whitespace-nowrap bg-black/85 px-1.5 font-semibold uppercase leading-[1.55] tracking-[0.14em] text-purple-200 ring-1 ring-purple-400/70 ${small ? "text-[9px]" : "text-[10.5px]"}`,
+                  style: { boxShadow: "0 0 10px rgba(168,85,247,.45)", textShadow: "0 0 8px rgba(192,132,252,.8)" },
+                },
+                "\u221E Eterno",
+              ),
             date &&
               HX(
                 "span",
@@ -13616,6 +13728,7 @@ function GamesPage({ games, setGames }) {
   return HX(
     "div",
     { className: "min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-8", "data-games-page": !0, onScroll: hover ? hideCard : void 0 },
+    HX("style", {}, GM_CSS),
     HX(Pd, {
       icon: Xo,
       title: "Backlog de jogos",
@@ -14491,6 +14604,518 @@ function TimelinePage({ events, setEvents }) {
   );
 }
 
+// ===== PONTOS & LOJA DE RECOMPENSAS (gamificação dos hábitos) =====
+// Extrato "skilltree-points-v1" = [{ id, t (ms), k: "c"|"r", d (±pontos), h?, day?, r?, n (rótulo) }]
+//   k "c" = check-in de hábito (+10) · k "r" = resgate de recompensa (−custo)
+// rewardPoints (o SALDO) = soma do extrato, com cada check-in contado 1x por hábito/dia.
+//   Guardar os lançamentos (e não só o número) deixa o saldo certo quando dois aparelhos mexem ao mesmo tempo
+//   (a sincronização junta os lançamentos dos dois) e permite desfazer check-in ou resgate sem errar a conta.
+// Loja "skilltree-rewards-v1" = [{ id, nome, custo }]
+var RW_LEDGER_KEY = "skilltree-points-v1",
+  RW_KEY = "skilltree-rewards-v1",
+  RW_CHECKIN = 10, // pontos por hábito concluído no dia
+  RW_SUGGEST = [
+    { nome: "Dia de jogos", custo: 50 },
+    { nome: "Refei\xE7\xE3o livre", custo: 100 },
+    { nome: "Comprar um jogo", custo: 500 },
+  ],
+  rwInt = (v, lo, hi) => {
+    if (v === "" || v === null || v === void 0) return null;
+    let n = Math.round(Number(v));
+    return Number.isFinite(n) && n >= lo && n <= hi ? n : null;
+  },
+  rwEntry = (x) => ({ id: Qe(), t: Date.now(), ...x }),
+  rwFmt = (n) => Number(n || 0).toLocaleString("pt-BR"),
+  rwWhen = (t) => {
+    let d = new Date(t);
+    return !t || isNaN(d) ? "" : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} \xB7 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  },
+  // check-in já pontuado hoje para este hábito?
+  rwHasCheck = (ledger, h, day) => ledger.some((e) => e.k === "c" && e.h === h && e.day === day),
+  // animações do sistema de pontos (e o brilho do "Jogo Eterno" no Backlog)
+  RW_CSS =
+    "@keyframes rwshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}" +
+    ".rw-shake{animation:rwshake .45s ease-in-out}" +
+    // o fundo do cartão pisca em vermelho (Pontos insuficientes) ou acende em dourado (Resgatada!)
+    "@keyframes rwred{0%,100%{background-color:rgba(11,13,20,.95)}15%,55%{background-color:rgba(153,27,27,.78)}35%,75%{background-color:rgba(40,8,10,.95)}}" +
+    ".rw-red{animation:rwred 1s ease-in-out}" +
+    "@keyframes rwpop{0%{background-color:rgba(250,204,21,.55)}100%{background-color:rgba(11,13,20,.95)}}" +
+    ".rw-pop{animation:rwpop .9s ease-out}" +
+    "@keyframes rwbump{0%{transform:scale(1)}30%{transform:scale(1.14)}100%{transform:scale(1)}}" +
+    ".rw-bump{animation:rwbump .5s ease-out;transform-origin:left center}" +
+    "@keyframes hbgain{0%{opacity:0;transform:translate(-50%,8px) scale(.8)}18%{opacity:1;transform:translate(-50%,-4px) scale(1.12)}100%{opacity:0;transform:translate(-50%,-44px) scale(1)}}" +
+    ".hb-gain{animation:hbgain 1.4s ease-out forwards}" +
+    "@keyframes rwtoast{from{opacity:0;transform:translate(-50%,-14px)}to{opacity:1;transform:translate(-50%,0)}}" +
+    ".rw-toast{animation:rwtoast .25s ease-out both}" +
+    "@media (prefers-reduced-motion:reduce){.rw-shake,.rw-red,.rw-pop,.rw-bump,.hb-gain,.rw-toast{animation:none}}";
+function rwLedgerLoad() {
+  try {
+    let raw = localStorage.getItem(RW_LEDGER_KEY),
+      arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    let ids = new Set(),
+      out = [];
+    for (let e of arr.slice(0, 1e5)) {
+      if (!e || typeof e != "object" || (e.k !== "c" && e.k !== "r")) continue;
+      let d = rwInt(e.d, -1e6, 1e6);
+      if (d === null) continue;
+      let id = ge(e.id, 20);
+      (!id || ids.has(id)) && (id = Qe());
+      ids.add(id);
+      out.push(
+        e.k === "c"
+          ? { id, t: Number(e.t) || 0, k: "c", d, h: ge(e.h, 20), day: hbValidDate(e.day) ? e.day : "", n: ge(e.n, 80) }
+          : { id, t: Number(e.t) || 0, k: "r", d, r: ge(e.r, 20), n: ge(e.n, 80) },
+      );
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+function rwLoad() {
+  try {
+    let raw = localStorage.getItem(RW_KEY),
+      arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    let ids = new Set();
+    return arr
+      .filter((r) => r && typeof r == "object")
+      .slice(0, 300)
+      .map((r) => {
+        let id = ge(r.id, 20);
+        (!id || ids.has(id)) && (id = Qe());
+        ids.add(id);
+        return { id, nome: ge(r.nome, 80).trim() || "Recompensa", custo: rwInt(r.custo, 1, 1e6) || 1 };
+      });
+  } catch {
+    return [];
+  }
+}
+// saldo + números do extrato (um check-in repetido do mesmo hábito/dia — ex.: feito nos dois aparelhos — conta uma vez)
+function rwStats(ledger, today) {
+  let seen = new Set(),
+    bal = 0,
+    earned = 0,
+    spent = 0,
+    todayG = 0,
+    redeemed = {};
+  for (let e of ledger || []) {
+    if (e.k === "c") {
+      let key = `${e.h}|${e.day}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    bal += e.d;
+    e.d > 0 ? (earned += e.d) : (spent -= e.d);
+    e.k === "c" && e.day === today && (todayG += e.d);
+    e.k === "r" && e.r && (redeemed[e.r] = (redeemed[e.r] || 0) + 1);
+  }
+  return { bal, earned, spent, today: todayG, redeemed };
+}
+// ---- painel dourado do HUD: SALDO DE PONTOS ----
+function RwBalance({ points, stats, histOpen, onHistory, onStore }) {
+  let neg = points < 0,
+    long = rwFmt(points).length > 6, // "123.450" em diante: fonte menor no celular
+    stat = (k, label, value, color) =>
+      HX(
+        "div",
+        { className: "min-w-0" },
+        HX("div", { className: "text-[9.5px] font-semibold uppercase tracking-[0.22em] text-yellow-500/80" }, label),
+        HX("div", { className: "font-orbit text-[15px] leading-tight", style: { color }, [`data-points-${k}`]: !0 }, value),
+      );
+  return HX(
+    "section",
+    { className: "relative mb-5", "aria-label": "Saldo de pontos", "data-points-panel": !0, style: { filter: "drop-shadow(0 0 18px rgba(250,204,21,.22))" } },
+    HX("div", { className: "absolute inset-0", style: { clipPath: it, background: "linear-gradient(115deg,#fde047 0%,#f59e0b 40%,rgba(250,204,21,.25) 75%,rgba(232,121,249,.45) 100%)" } }),
+    HX("div", { className: "absolute bg-[#120d03]/85 backdrop-blur-md", style: { inset: 1.5, clipPath: it } }),
+    HX("div", {
+      "aria-hidden": "true",
+      className: "pointer-events-none absolute inset-0",
+      style: { clipPath: it, background: "repeating-linear-gradient(0deg,rgba(250,204,21,.035) 0 1px,transparent 1px 3px),radial-gradient(60% 120% at 10% 50%,rgba(250,204,21,.14),transparent 70%)" },
+    }),
+    HX(
+      "div",
+      { className: "relative flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4 sm:px-7" },
+      HX(
+        "div",
+        { className: "flex items-center gap-4" },
+        HX(
+          "span",
+          {
+            className: "flex h-14 w-14 shrink-0 items-center justify-center rounded-full",
+            style: { background: "radial-gradient(circle at 35% 30%,#fffbe0 0%,#fde047 38%,#ca8a04 100%)", boxShadow: "0 0 22px rgba(250,204,21,.65), inset 0 -3px 6px rgba(120,53,15,.5)" },
+          },
+          HX(bf, { size: 26, strokeWidth: 2.2, className: "text-[#422006]" }),
+        ),
+        HX(
+          "div",
+          {},
+          HX("div", { className: "text-[10px] font-semibold uppercase tracking-[0.32em] text-yellow-400/90" }, "Saldo de pontos"),
+          HX(
+            "div",
+            { key: points, className: "rw-bump flex flex-wrap items-baseline gap-x-2" },
+            HX(
+              "span",
+              {
+                className: `font-orbit font-black leading-none sm:text-[42px] ${long ? "text-[26px]" : "text-[34px]"} ${neg ? "text-red-400" : "text-yellow-300"}`,
+                style: { textShadow: neg ? "0 0 14px rgba(248,113,113,.8)" : "0 0 16px rgba(250,204,21,.85), 0 0 34px rgba(250,204,21,.35)" },
+                "data-points-balance": points,
+              },
+              rwFmt(points),
+            ),
+            HX("span", { className: "font-orbit text-[13px] text-yellow-500/80" }, "PTS"),
+          ),
+        ),
+      ),
+      HX(
+        "div",
+        { className: "grid grid-cols-3 gap-5 sm:gap-7" },
+        stat("today", "Hoje", `+${rwFmt(stats.today)}`, "#4ade80"),
+        stat("earned", "Ganhos", rwFmt(stats.earned), "#fde047"),
+        stat("spent", "Resgatados", rwFmt(stats.spent), "#e879f9"),
+      ),
+      HX(
+        "div",
+        { className: "flex flex-wrap items-center gap-2 lg:ml-auto" },
+        HX("span", { className: "mr-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-yellow-500/75" }, `+${RW_CHECKIN} pts por check-in`),
+        HX(HBtn, { onClick: onHistory, label: histOpen ? "Fechar extrato" : "Ver extrato de pontos" }, HX(id, { size: 13 }), histOpen ? "Fechar extrato" : "Extrato"),
+        HX(HBtn, { onClick: onStore, label: "Ir para a loja de recompensas", className: "xl:hidden" }, HX(us, { size: 13 }), "Loja"),
+      ),
+    ),
+  );
+}
+// ---- extrato (últimos lançamentos) ----
+function RwHistory({ ledger, habits }) {
+  let names = {};
+  for (let h of habits) names[h.id] = h.name;
+  let rows = [...ledger].sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, 40);
+  return HX(
+    "section",
+    { className: "fade-in mb-5 border border-yellow-500/25 bg-black/40 backdrop-blur-md", "aria-label": "Extrato de pontos", "data-points-history": !0 },
+    HX(
+      "div",
+      { className: "flex items-center justify-between border-b border-yellow-500/15 px-4 py-2" },
+      HX("span", { className: "text-[10px] font-semibold uppercase tracking-[0.3em] text-yellow-400/90" }, "Extrato \xB7 \xFAltimos lan\xE7amentos"),
+      HX("span", { className: "font-orbit text-[10px] text-zinc-500" }, `${ledger.length} no total`),
+    ),
+    rows.length === 0
+      ? HX("p", { className: "px-4 py-4 text-[12px] uppercase tracking-[0.18em] text-zinc-500" }, "Nenhum lan\xE7amento ainda \xB7 fa\xE7a um check-in para ganhar pontos")
+      : HX(
+          "ul",
+          { className: "max-h-64 divide-y divide-white/5 overflow-y-auto" },
+          ...rows.map((e) =>
+            HX(
+              "li",
+              { key: e.id, className: "flex items-center gap-3 px-4 py-1.5", "data-points-row": e.k },
+              HX("span", { className: `w-16 shrink-0 font-orbit text-[13px] font-bold ${e.d >= 0 ? "text-emerald-400" : "text-fuchsia-400"}` }, `${e.d >= 0 ? "+" : "−"}${rwFmt(Math.abs(e.d))}`),
+              HX(
+                "span",
+                { className: "min-w-0 flex-1 truncate text-[12px] uppercase tracking-[0.12em] text-zinc-300" },
+                HX("span", { className: e.k === "c" ? "text-cyan-300/80" : "text-yellow-300/90" }, e.k === "c" ? "Check-in \xB7 " : "Resgate \xB7 "),
+                e.k === "c" ? names[e.h] || e.n || "H\xE1bito removido" : e.n || "Recompensa",
+              ),
+              HX("span", { className: "shrink-0 font-orbit text-[10px] text-zinc-500" }, rwWhen(e.t)),
+            ),
+          ),
+        ),
+  );
+}
+// ---- cartão de recompensa com [ RESGATAR ] ----
+function RwCard({ r, points, count, onRedeem, onSave, onDelete }) {
+  let [fx, setFx] = (0, K.useState)(null), // "ok" (resgatada) | "no" (pontos insuficientes)
+    [edit, setEdit] = (0, K.useState)(!1),
+    [nome, setNome] = (0, K.useState)(r.nome),
+    [custo, setCusto] = (0, K.useState)(String(r.custo)),
+    [err, setErr] = (0, K.useState)(""),
+    [del, setDel] = (0, K.useState)(!1),
+    tm = (0, K.useRef)(0),
+    last = (0, K.useRef)(count),
+    can = points >= r.custo,
+    pct = Math.max(0, Math.min(100, (Math.max(0, points) / r.custo) * 100)),
+    flash = (v) => (clearTimeout(tm.current), setFx(v), (tm.current = setTimeout(() => setFx(null), 1300))),
+    go = () => {
+      if (fx === "ok") return; // trava rápida contra clique duplo
+      if (!can) return flash("no");
+      onRedeem(r) ? flash("ok") : flash("no");
+    },
+    save = () => {
+      let n = nome.trim(),
+        c = rwInt(custo, 1, 1e6);
+      if (!n) return setErr("D\xEA um nome.");
+      if (c === null) return setErr("Custo inv\xE1lido (1 a 1.000.000).");
+      (onSave({ nome: n.slice(0, 80), custo: c }), setEdit(!1), setErr(""));
+    };
+  (0, K.useEffect)(() => () => clearTimeout(tm.current), []);
+  (0, K.useEffect)(() => {
+    count < last.current && (clearTimeout(tm.current), setFx(null));
+    last.current = count;
+  }, [count]);
+  return HX(
+    "li",
+    {
+      className: `relative ${fx === "no" ? "rw-shake" : ""}`,
+      "data-reward": r.id,
+      "data-reward-state": fx || (can ? "ok" : "locked"),
+    },
+    HX("div", {
+      "aria-hidden": "true",
+      className: "absolute inset-0 transition-colors duration-300",
+      style: { clipPath: ot, background: fx === "no" ? "#ef4444" : fx === "ok" ? "#fde047" : can ? "rgba(250,204,21,.75)" : "rgba(113,113,122,.45)" },
+    }),
+    HX("div", { "aria-hidden": "true", className: `absolute bg-[#0b0d14]/95 ${fx === "no" ? "rw-red" : fx === "ok" ? "rw-pop" : ""}`, style: { inset: 1.5, clipPath: ot } }),
+    HX(
+      "div",
+      { className: "relative p-3" },
+      edit
+        ? HX(
+            "div",
+            { className: "grid grid-cols-[minmax(0,1fr)_92px] gap-2" },
+            HX("input", {
+              "aria-label": "Nome da recompensa",
+              value: nome,
+              maxLength: 80,
+              onChange: (ev) => (setNome(ev.target.value), setErr("")),
+              onKeyDown: (ev) => ev.key === "Enter" && save(),
+              className: HIN,
+            }),
+            HX("input", {
+              "aria-label": "Custo em pontos",
+              type: "number",
+              inputMode: "numeric",
+              min: 1,
+              value: custo,
+              onChange: (ev) => (setCusto(ev.target.value.slice(0, 7)), setErr("")),
+              onKeyDown: (ev) => ev.key === "Enter" && save(),
+              className: `${HIN} font-orbit`,
+            }),
+            err && HX("p", { className: "col-span-2 text-[11px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+            HX(
+              "div",
+              { className: "col-span-2 flex justify-end gap-2" },
+              HX(HBtn, { onClick: () => (setEdit(!1), setNome(r.nome), setCusto(String(r.custo)), setErr("")), label: "Cancelar edi\xE7\xE3o" }, "Cancelar"),
+              HX(HBtn, { tone: "primary", onClick: save, label: "Salvar recompensa" }, HX(ls, { size: 12 }), "Salvar"),
+            ),
+          )
+        : HX(
+            K.Fragment,
+            {},
+            HX(
+              "div",
+              { className: "flex items-start gap-2" },
+              HX(
+                "div",
+                { className: "min-w-0 flex-1" },
+                HX("div", { className: "break-words text-[14px] font-bold uppercase leading-tight tracking-[0.08em] text-zinc-100", "data-reward-name": !0 }, r.nome),
+                HX(
+                  "div",
+                  { className: "mt-1 flex items-center gap-2" },
+                  HX("span", { className: "font-orbit text-[15px] font-bold text-yellow-300", style: { textShadow: "0 0 10px rgba(250,204,21,.6)" }, "data-reward-cost": r.custo }, rwFmt(r.custo)),
+                  HX("span", { className: "text-[9px] font-semibold uppercase tracking-[0.2em] text-yellow-500/70" }, "pts"),
+                  count > 0 && HX("span", { className: "ml-1 text-[9.5px] uppercase tracking-[0.16em] text-fuchsia-300/80", "data-reward-count": count }, `Resgatada ${count}\xD7`),
+                ),
+              ),
+              del
+                ? HX(
+                    "span",
+                    { className: "flex shrink-0 items-center gap-1" },
+                    HX(HBtn, { tone: "danger", onClick: onDelete, label: `Confirmar exclus\xE3o de ${r.nome}` }, "Excluir"),
+                    HX("button", { type: "button", onClick: () => setDel(!1), className: "px-1 text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-200" }, "N\xE3o"),
+                  )
+                : HX(
+                    "span",
+                    { className: "flex shrink-0 items-center gap-0.5" },
+                    HX(MiniAct, { icon: ns, label: `Editar recompensa ${r.nome}`, onClick: () => setEdit(!0), size: 24 }),
+                    HX(MiniAct, { icon: yt, label: `Excluir recompensa ${r.nome}`, onClick: () => setDel(!0), size: 24 }),
+                  ),
+            ),
+            // progresso do saldo até o custo
+            HX(
+              "div",
+              { className: "mt-2 h-[3px] overflow-hidden bg-white/10", "aria-hidden": "true" },
+              HX("div", { className: "h-full transition-[width] duration-500", style: { width: `${pct}%`, background: can ? "#fde047" : "#a1a1aa", boxShadow: can ? "0 0 8px rgba(250,204,21,.8)" : "none" } }),
+            ),
+            HX(
+              "div",
+              { className: "mt-2 flex items-center justify-between gap-2" },
+              HX(
+                "span",
+                { className: `text-[10px] font-semibold uppercase tracking-[0.16em] ${fx === "no" ? "text-red-400" : can ? "text-emerald-400/90" : "text-zinc-500"}` },
+                can && fx !== "no" ? "Dispon\xEDvel" : `Faltam ${rwFmt(r.custo - Math.max(0, points))} pts`,
+              ),
+              HX(
+                "button",
+                {
+                  type: "button",
+                  onClick: go,
+                  "aria-label": `Resgatar ${r.nome} por ${r.custo} pontos`,
+                  "data-reward-redeem": r.id,
+                  className: `shrink-0 border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                    fx === "no"
+                      ? "border-red-500 bg-red-600/25 text-red-200"
+                      : fx === "ok"
+                        ? "border-yellow-300 bg-yellow-400 text-black"
+                        : can
+                          ? "border-yellow-400 bg-yellow-400/10 text-yellow-300 hover:bg-yellow-400 hover:text-black"
+                          : "border-zinc-700 bg-zinc-900/60 text-zinc-500 hover:border-red-700 hover:text-red-300"
+                  }`,
+                  style: { clipPath: TL_CUT_S },
+                },
+                fx === "no" ? "Pontos insuficientes" : fx === "ok" ? "Resgatada!" : "[ Resgatar ]",
+              ),
+            ),
+          ),
+    ),
+  );
+}
+// ---- LOJA DE RECOMPENSAS ----
+function RewardStore({ rewards, setRewards, points, redeemed, onRedeem }) {
+  let [nome, setNome] = (0, K.useState)(""),
+    [custo, setCusto] = (0, K.useState)(""),
+    [err, setErr] = (0, K.useState)(""),
+    add = (n, c) => {
+      let nm = String(n || "").trim(),
+        cc = rwInt(c, 1, 1e6);
+      if (!nm) return (setErr("D\xEA um nome \xE0 recompensa."), !1);
+      if (cc === null) return (setErr("Custo inv\xE1lido (1 a 1.000.000 pontos)."), !1);
+      setRewards((rs) => [...rs, { id: Qe(), nome: nm.slice(0, 80), custo: cc }]);
+      return (setErr(""), !0);
+    },
+    submit = () => add(nome, custo) && (setNome(""), setCusto("")),
+    // mais baratas primeiro (a ordem de uma vitrine)
+    list = [...rewards].sort((a, b) => a.custo - b.custo || a.nome.localeCompare(b.nome, "pt-BR")),
+    have = new Set(rewards.map((r) => tlFold(r.nome))),
+    sugg = RW_SUGGEST.filter((s) => !have.has(tlFold(s.nome)));
+  return HX(
+    "aside",
+    { id: "rw-store", className: "relative min-w-0 scroll-mt-4 xl:sticky xl:top-2 xl:self-start", "aria-label": "Loja de recompensas", "data-reward-store": !0 },
+    HX("div", { "aria-hidden": "true", className: "absolute inset-0", style: { clipPath: it, background: "linear-gradient(160deg,rgba(232,121,249,.7),rgba(34,211,238,.45) 45%,rgba(250,204,21,.55))" } }),
+    HX("div", { "aria-hidden": "true", className: "absolute bg-[#0a0810]/85 backdrop-blur-md", style: { inset: 1.5, clipPath: it } }),
+    HX(
+      "div",
+      { className: "relative p-4 sm:p-5" },
+      HX(
+        "div",
+        { className: "mb-3 flex items-center gap-2.5" },
+        HX(us, { size: 20, strokeWidth: 1.8, className: "text-fuchsia-300", style: { filter: "drop-shadow(0 0 6px rgba(232,121,249,.8))" } }),
+        HX(
+          "div",
+          { className: "min-w-0" },
+          HX("h3", { className: "text-[15px] font-bold uppercase leading-tight tracking-[0.18em] text-yellow-400" }, "Loja de recompensas"),
+          HX("p", { className: "text-[10px] uppercase tracking-[0.2em] text-fuchsia-300/70" }, "Troque seus pontos por pr\xEAmios reais"),
+        ),
+      ),
+      // cadastro
+      HX(
+        "div",
+        { className: "grid grid-cols-[minmax(0,1fr)_84px] gap-2", "data-reward-form": !0 },
+        HX("input", {
+          "aria-label": "Nova recompensa",
+          value: nome,
+          maxLength: 80,
+          placeholder: "Ex.: Dia de jogos",
+          onChange: (ev) => (setNome(ev.target.value), setErr("")),
+          onKeyDown: (ev) => ev.key === "Enter" && submit(),
+          className: HIN,
+        }),
+        HX("input", {
+          "aria-label": "Custo da nova recompensa",
+          type: "number",
+          inputMode: "numeric",
+          min: 1,
+          value: custo,
+          placeholder: "Pts",
+          onChange: (ev) => (setCusto(ev.target.value.slice(0, 7)), setErr("")),
+          onKeyDown: (ev) => ev.key === "Enter" && submit(),
+          className: `${HIN} font-orbit`,
+        }),
+        HX("div", { className: "col-span-2" }, HX(ye, { variant: "primary", onClick: submit }, HX(gt, { size: 14, strokeWidth: 3 }), "Adicionar recompensa")),
+      ),
+      err && HX("p", { className: "mt-2 text-[11px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+      // sugestões rápidas (as do exemplo) enquanto não estiverem na loja
+      sugg.length > 0 &&
+        HX(
+          "div",
+          { className: "mt-3 flex flex-wrap items-center gap-1.5", "data-reward-suggest": !0 },
+          HX("span", { className: "text-[9.5px] font-semibold uppercase tracking-[0.2em] text-zinc-500" }, "Sugest\xF5es:"),
+          ...sugg.map((s) =>
+            HX(
+              "button",
+              {
+                key: s.nome,
+                type: "button",
+                onClick: () => add(s.nome, s.custo),
+                className: "border border-fuchsia-500/40 bg-fuchsia-500/5 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-fuchsia-200 transition-colors hover:border-fuchsia-300 hover:bg-fuchsia-500/20",
+              },
+              `+ ${s.nome} \xB7 ${rwFmt(s.custo)}`,
+            ),
+          ),
+        ),
+      list.length === 0
+        ? HX("p", { className: "mt-4 border border-dashed border-zinc-700 px-3 py-5 text-center text-[11.5px] uppercase tracking-[0.18em] text-zinc-500" }, "Nenhuma recompensa ainda \xB7 cadastre a primeira")
+        : HX(
+            "ul",
+            { className: "mt-4 space-y-2.5" },
+            ...list.map((r) =>
+              HX(RwCard, {
+                key: r.id,
+                r,
+                points,
+                count: redeemed[r.id] || 0,
+                onRedeem,
+                onSave: (v) => setRewards((rs) => rs.map((x) => (x.id === r.id ? { ...x, ...v } : x))),
+                onDelete: () => setRewards((rs) => rs.filter((x) => x.id !== r.id)),
+              }),
+            ),
+          ),
+    ),
+  );
+}
+// ---- aviso de resgate (com desfazer) ----
+function RwToast({ toast, onUndo, onClose }) {
+  (0, K.useEffect)(() => {
+    let t = setTimeout(onClose, 5500);
+    return () => clearTimeout(t);
+  }, [toast.id]);
+  return HX(
+    "div",
+    {
+      role: "status",
+      "aria-live": "polite",
+      className: "rw-toast fixed left-1/2 top-4 z-[70] w-[min(92vw,420px)]",
+      style: { filter: "drop-shadow(0 0 18px rgba(250,204,21,.45)) drop-shadow(0 12px 24px rgba(0,0,0,.6))" },
+      "data-reward-toast": !0,
+    },
+    HX("div", { className: "absolute inset-0", style: { clipPath: ot, background: "linear-gradient(120deg,#fde047,#f59e0b 55%,#e879f9)" } }),
+    HX("div", { className: "absolute bg-[#120d03]/95", style: { inset: 1.5, clipPath: ot } }),
+    HX(
+      "div",
+      { className: "relative flex items-center gap-3 px-4 py-3" },
+      HX(
+        "span",
+        { className: "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-black", style: { boxShadow: "0 0 16px rgba(250,204,21,.8)" } },
+        HX(Wn, { size: 20, strokeWidth: 3 }),
+      ),
+      HX(
+        "div",
+        { className: "min-w-0 flex-1" },
+        HX("div", { className: "text-[13px] font-bold uppercase tracking-[0.2em] text-yellow-300" }, "Recompensa resgatada!"),
+        HX(
+          "div",
+          { className: "truncate text-[11.5px] uppercase tracking-[0.12em] text-zinc-300" },
+          toast.nome,
+          HX("span", { className: "ml-2 font-orbit text-fuchsia-300" }, `−${rwFmt(toast.custo)} pts`),
+        ),
+      ),
+      HX(
+        "button",
+        { type: "button", onClick: onUndo, className: "shrink-0 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400 underline-offset-2 hover:text-yellow-200 hover:underline" },
+        "Desfazer",
+      ),
+    ),
+  );
+}
+
 // Ponto de montagem do bot\xE3o de Sincroniza\xE7\xE3o/Backup (o motor fica no script do <head>).
 // Ao desmontar (sair do hub), o bot\xE3o e o painel somem: n\xE3o ficam mais flutuando nas outras abas.
 function StbkSlot() {
@@ -14543,6 +15168,11 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     [mediaLibrary, setMediaLibrary] = (0, K.useState)(mdLoad),
     // Linha do tempo: [{ id, date, title, desc, image, location, impact, createdAt }] (ordem e agrupamento calculados na tela)
     [timelineEvents, setTimelineEvents] = (0, K.useState)(tlLoad),
+    // Pontos: extrato [{ id, t, k: "c" (check-in +10) | "r" (resgate -custo), d, h?, day?, r?, n }] + loja [{ id, nome, custo }]
+    [rewardLedger, setRewardLedger] = (0, K.useState)(rwLedgerLoad),
+    [rewards, setRewards] = (0, K.useState)(rwLoad),
+    // rewardPoints = SALDO atual (começa em 0): recalculado sempre que o extrato muda (check-in, desfazer, resgate, sincronização)
+    rewardPoints = (0, K.useMemo)(() => rwStats(rewardLedger).bal, [rewardLedger]),
     dayRef = (0, K.useRef)(""),
     navRef = (0, K.useRef)(null),
     [U, Ie] = (0, K.useState)(Lie),
@@ -14656,6 +15286,18 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
       } catch {}
       ti(TL_KEY, timelineEvents) || b(!0);
     }, [timelineEvents]),
+    (0, K.useEffect)(() => {
+      try {
+        if (!rewardLedger.length && localStorage.getItem(RW_LEDGER_KEY) === null) return;
+      } catch {}
+      ti(RW_LEDGER_KEY, rewardLedger) || b(!0);
+    }, [rewardLedger]),
+    (0, K.useEffect)(() => {
+      try {
+        if (!rewards.length && localStorage.getItem(RW_KEY) === null) return;
+      } catch {}
+      ti(RW_KEY, rewards) || b(!0);
+    }, [rewards]),
     // Virada do dia (meia-noite, volta de suspensão, aba reaberta): recalcula as ofensivas sem recarregar a página
     (0, K.useEffect)(() => {
       dayRef.current = hbDay;
@@ -15309,7 +15951,17 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
                 active: kanbanActive,
                 setActive: setKanbanActive,
               }),
-            n === "habits" && (0, u.jsx)(HabitsPage, { habits, setHabits, today: hbDay }),
+            n === "habits" &&
+              (0, u.jsx)(HabitsPage, {
+                habits,
+                setHabits,
+                today: hbDay,
+                ledger: rewardLedger,
+                setLedger: setRewardLedger,
+                rewardPoints,
+                rewards,
+                setRewards,
+              }),
             n === "media" && (0, u.jsx)(MediaPage, { items: mediaLibrary, setItems: setMediaLibrary }),
             n === "timeline" && (0, u.jsx)(TimelinePage, { events: timelineEvents, setEvents: setTimelineEvents }),
           ],
