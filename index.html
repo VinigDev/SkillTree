@@ -109,6 +109,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     'skilltree-profile-v1': 'Status e dinheiro',
     'skilltree-games-v1': 'Backlog de jogos',
     'skilltree-media-v1': 'Mídias (estante de DVDs)',
+    'skilltree-timeline-v1': 'Linha do tempo (memórias)',
     'skilltree-fin-v1': 'Finanças',
     'skilltree-wishlist-v1': 'Backlog de produtos',
     'skilltree-pc-v1': 'Meu PC',
@@ -6638,8 +6639,8 @@ function fle({ areas: e, trophies: t, texts: a, onToggle: r, onText: n, onNewAre
   });
 }
 // Ordem FIXA das abas (menu, L1/R1 e atalhos Q/E):
-// HUB -> FINANÇAS -> BACKLOG -> PLANEJAMENTO -> MEU PC -> MÍDIAS -> LEITURAS -> TAREFAS -> HÁBITOS (e volta ao HUB)
-var TAB_ORDER = ["hub", "fin", "games", "plan", "pc", "media", "read", "tasks", "habits"],
+// HUB -> FINANÇAS -> PLANEJAMENTO -> MEU PC -> MÍDIAS -> BACKLOG -> LEITURAS -> TAREFAS -> HÁBITOS -> LINHA DO TEMPO (e volta ao HUB)
+var TAB_ORDER = ["hub", "fin", "plan", "pc", "media", "games", "read", "tasks", "habits", "timeline"],
   Sd = [
     { id: "hub", label: "Hub principal", icon: Hf },
     { id: "fin", label: "Finan\xE7as", icon: ei },
@@ -6650,6 +6651,7 @@ var TAB_ORDER = ["hub", "fin", "games", "plan", "pc", "media", "read", "tasks", 
     { id: "read", label: "Leituras", icon: $o },
     { id: "tasks", label: "Tarefas", icon: gf },
     { id: "habits", label: "H\xE1bitos", icon: pd },
+    { id: "timeline", label: "Linha do tempo", icon: TlIcon },
   ].sort((a, b) => TAB_ORDER.indexOf(a.id) - TAB_ORDER.indexOf(b.id)),
   w8 = "polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)";
 function dle({ tab: e, onTab: t }) {
@@ -6784,6 +6786,7 @@ function ple({ tab: e }) {
           tasks: "Terminal // Kanban",
           habits: "Terminal // H\xE1bitos",
           media: "Terminal // Videoteca",
+          timeline: "Terminal // Mem\xF3rias",
         }[e],
       }),
       (0, u.jsx)("span", {
@@ -13755,6 +13758,739 @@ function GamesPage({ games, setGames }) {
   );
 }
 
+// ===== LINHA DO TEMPO · memórias e marcos numa trilha de fibra ótica =====
+// timelineEvents = [{ id, date ("AAAA-MM-DD"), title, desc, image (data URL base64), location,
+//                     impact: "positivo"|"neutro"|"negativo"|"transformador", createdAt (ms) }]
+// Persistido em "skilltree-timeline-v1" (entra no backup e na sincronização como os outros blocos).
+// O usuário só cadastra acontecimentos: a ordem cronológica e os nós de ANO e MÊS são calculados (useMemo).
+var TL_KEY = "skilltree-timeline-v1",
+  TL_ORDER_KEY = "stui-timeline-order", // preferência deste aparelho (fora do backup/sincronização)
+  // impacto emocional = cor do brilho do nó do acontecimento
+  TL_IMPACT = [
+    { id: "positivo", label: "Positivo", color: "#4ade80", glow: "0 0 8px #4ade80, 0 0 18px rgba(74,222,128,.6)" },
+    { id: "neutro", label: "Neutro", color: "#f4f4f5", glow: "0 0 8px rgba(244,244,245,.9), 0 0 16px rgba(244,244,245,.45)" },
+    { id: "negativo", label: "Negativo", color: "#ef4444", glow: "0 0 8px #ef4444, 0 0 18px rgba(239,68,68,.6)" },
+    { id: "transformador", label: "Transformador", color: "#e879f9", glow: "0 0 10px #e879f9, 0 0 24px rgba(232,121,249,.7)", pulse: !0 },
+  ],
+  tlImpact = (id) => TL_IMPACT.find((x) => x.id === id) || TL_IMPACT[1],
+  TL_MES = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"],
+  TL_MES3 = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"],
+  TL_DOW = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "S\xC1B"],
+  // data real de calendário (recusa 31/02 etc.)
+  tlValid = (d) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d || ""))) return !1;
+    let [y, m, dd] = d.split("-").map(Number),
+      t = new Date(y, m - 1, dd);
+    return y >= 1000 && t.getFullYear() === y && t.getMonth() === m - 1 && t.getDate() === dd;
+  },
+  tlParts = (d) => {
+    let [y, m, dd] = d.split("-").map(Number);
+    return { y, m, d: dd, dow: new Date(y, m - 1, dd).getDay() };
+  },
+  tlFmt = (d) => {
+    if (!tlValid(d)) return "sem data";
+    let p = tlParts(d);
+    return `${p.d} de ${TL_MES[p.m - 1].toLowerCase()} de ${p.y}`;
+  },
+  tlFold = (s) =>
+    String(s || "")
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase(),
+  tlImgOk = (s) => /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(String(s || "")),
+  tlNew = (x) => ({ id: Qe(), date: "", title: "", desc: "", image: "", location: "", impact: "neutro", createdAt: Date.now(), ...(x || {}) }),
+  // hexágono alongado do nó de ano
+  TL_HEX = "polygon(16px 0,calc(100% - 16px) 0,100% 50%,calc(100% - 16px) 100%,16px 100%,0 50%)",
+  TL_CUT_S = "polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)",
+  // trilha de fibra ótica: filamento ciano com pacotes de luz correndo + anel pulsante dos nós transformadores
+  TL_CSS =
+    '.tl-fiber{background:linear-gradient(180deg,rgba(34,211,238,0) 0,#22d3ee 48px,#22d3ee calc(100% - 90px),rgba(232,121,249,.95) calc(100% - 20px),rgba(232,121,249,0) 100%);box-shadow:0 0 10px rgba(34,211,238,.75),0 0 26px rgba(34,211,238,.35)}' +
+    '.tl-fiber:before{content:"";position:absolute;top:0;bottom:0;left:-4px;right:-4px;background:rgba(34,211,238,.09)}' +
+    '.tl-fiber:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(180deg,rgba(255,255,255,.95) 0 3px,rgba(255,255,255,0) 3px 46px);animation:tlflow 1.8s linear infinite}' +
+    "@keyframes tlflow{from{background-position:0 0}to{background-position:0 46px}}" +
+    ".tl-ping{animation:tlping 2.4s ease-out infinite}" +
+    "@keyframes tlping{0%{box-shadow:0 0 0 0 currentColor}75%{box-shadow:0 0 0 11px transparent}100%{box-shadow:0 0 0 0 transparent}}" +
+    "@media (prefers-reduced-motion:reduce){.tl-fiber:after,.tl-ping{animation:none}}";
+function tlLoad() {
+  try {
+    let raw = localStorage.getItem(TL_KEY),
+      arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    let ids = new Set();
+    return arr
+      .filter((e) => e && typeof e == "object")
+      .slice(0, 5e3)
+      .map((e) => {
+        let id = ge(e.id, 20);
+        (!id || ids.has(id)) && (id = Qe());
+        ids.add(id);
+        return {
+          id,
+          date: tlValid(e.date) ? e.date : "",
+          title: ge(e.title, 160),
+          desc: ge(e.desc, 4e3),
+          image: tlImgOk(e.image) ? Ad(e.image) : "",
+          location: ge(e.location, 120),
+          impact: TL_IMPACT.some((x) => x.id === e.impact) ? e.impact : "neutro",
+          createdAt: Number.isFinite(Number(e.createdAt)) ? Number(e.createdAt) : 0,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+// ícone da aba (trilha vertical com nós e ramificações, no traço dos ícones do menu)
+function TlIcon({ size = 24, strokeWidth = 2, className, style }) {
+  return HX(
+    "svg",
+    { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", className, style, "aria-hidden": "true" },
+    HX("path", { d: "M12 2.5v19" }),
+    HX("circle", { cx: 12, cy: 5.5, r: 2 }),
+    HX("circle", { cx: 12, cy: 12, r: 2 }),
+    HX("circle", { cx: 12, cy: 18.5, r: 2 }),
+    HX("path", { d: "M14 5.5h6.5M3.5 12H10M14 18.5h4.5" }),
+  );
+}
+// alfinete de localização
+function TlPin({ size = 12 }) {
+  return HX(
+    "svg",
+    { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", className: "shrink-0" },
+    HX("path", { d: "M20 10c0 4.99-5.54 10.19-7.4 11.8a1 1 0 0 1-1.2 0C9.54 20.19 4 14.99 4 10a8 8 0 0 1 16 0" }),
+    HX("circle", { cx: 12, cy: 10, r: 3 }),
+  );
+}
+// ---- NÓ DE ANO: hexágono ciano grande (renderizado sozinho quando o ano muda) ----
+function TlYearNode({ year, count, muted }) {
+  let c = muted ? "#71717a" : "#22d3ee";
+  return HX(
+    "div",
+    { className: "relative flex py-6 md:justify-center", "data-tl-yearnode": year },
+    HX(
+      "div",
+      { className: "relative z-10 flex flex-col items-start md:items-center" },
+      HX(
+        "div",
+        { className: "relative", style: { filter: `drop-shadow(0 0 14px ${c}aa)` } },
+        HX("div", { className: "absolute inset-0", style: { clipPath: TL_HEX, background: c } }),
+        HX("div", { className: "absolute", style: { inset: 2, clipPath: TL_HEX, background: muted ? "#18181b" : "linear-gradient(180deg,#07232b,#050d12)" } }),
+        HX(
+          "div",
+          {
+            className: `relative flex h-[58px] min-w-[136px] items-center justify-center px-9 font-orbit font-black leading-none tracking-[0.08em] ${muted ? "text-[15px]" : "text-[27px]"}`,
+            style: { color: muted ? "#d4d4d8" : "#cffafe", textShadow: `0 0 12px ${c}, 0 0 24px ${c}88` },
+          },
+          year,
+        ),
+      ),
+      HX(
+        "div",
+        { className: "relative mt-1.5 bg-[#07050a] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.28em]", style: { color: muted ? "#a1a1aa" : "rgba(103,232,249,.85)" } },
+        `${count} acontecimento${count === 1 ? "" : "s"}`,
+      ),
+    ),
+  );
+}
+// ---- NÓ DE MÊS: losango amarelo na trilha + ramificação com o nome do mês ----
+function TlMonthNode({ month, year, count }) {
+  return HX(
+    "div",
+    { className: "relative flex items-center py-3 pl-[15px] md:justify-center md:pl-0", "data-tl-monthnode": `${year}-${String(month).padStart(2, "0")}` },
+    // ramificação horizontal (telas largas)
+    HX("span", {
+      "aria-hidden": "true",
+      className: "pointer-events-none absolute left-1/2 top-1/2 hidden h-px w-[260px] -translate-x-1/2 -translate-y-1/2 md:block",
+      style: { background: "linear-gradient(90deg,transparent,rgba(250,204,21,.75),transparent)", boxShadow: "0 0 8px rgba(250,204,21,.5)" },
+    }),
+    HX(
+      "div",
+      { className: "relative z-10 flex items-center gap-2.5" },
+      HX("span", {
+        "aria-hidden": "true",
+        className: "h-[14px] w-[14px] shrink-0 rotate-45 border-2 border-yellow-400 bg-[#1a1405] md:hidden",
+        style: { boxShadow: "0 0 10px rgba(250,204,21,.85)" },
+      }),
+      HX(
+        "span",
+        {
+          className: "flex items-center gap-2 border border-yellow-400/70 bg-[#0d0a03]/95 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.26em] text-yellow-300",
+          style: { clipPath: TL_CUT_S, textShadow: "0 0 8px rgba(250,204,21,.6)", boxShadow: "inset 0 0 12px rgba(250,204,21,.12)" },
+        },
+        TL_MES[month - 1],
+        HX("span", { className: "font-orbit text-[10px] tracking-normal text-yellow-500/90" }, count),
+      ),
+    ),
+  );
+}
+// ---- cartão do acontecimento (miniatura do lado da trilha) ----
+function TlCard({ e, im, p, left, onOpen }) {
+  let img = tlImgOk(e.image) ? e.image : "";
+  return HX(
+    "button",
+    {
+      type: "button",
+      onClick: () => onOpen(e.id),
+      "aria-label": `${e.title || "Sem t\xEDtulo"}, ${tlFmt(e.date)}${e.location ? `, ${e.location}` : ""}, impacto ${im.label}. Abrir para editar`,
+      "data-tl-card": e.id,
+      className: `group/tl relative col-start-2 row-start-1 block w-full min-w-0 text-left transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none ${left ? "md:col-start-1" : "md:col-start-3"}`,
+      style: { filter: `drop-shadow(0 0 10px ${im.color}26)` },
+    },
+    // fibra que liga o cartão ao nó
+    HX("span", {
+      "aria-hidden": "true",
+      className: `pointer-events-none absolute right-full top-1/2 h-[2px] w-[14px] -translate-y-1/2 md:w-[24px] ${left ? "md:left-full md:right-auto" : ""}`,
+      style: { background: im.color, boxShadow: `0 0 8px ${im.color}` },
+    }),
+    HX("span", {
+      "aria-hidden": "true",
+      className: "absolute inset-0",
+      style: { clipPath: ot, background: `linear-gradient(${left ? 270 : 90}deg,${im.color}cc 0%,${im.color}40 45%,rgba(127,29,29,.55) 100%)` },
+    }),
+    HX("span", {
+      "aria-hidden": "true",
+      className: "absolute bg-[#0b0d14]/95 transition-colors duration-200 group-hover/tl:bg-[#10141f] group-focus-visible/tl:bg-[#10141f]",
+      style: { inset: 1.5, clipPath: ot },
+    }),
+    HX(
+      "span",
+      { className: `relative flex gap-3 p-3 ${left ? "md:flex-row-reverse" : ""}` },
+      img &&
+        HX(
+          "span",
+          {
+            className: "relative h-16 w-16 shrink-0 overflow-hidden sm:h-[76px] sm:w-[76px]",
+            style: { clipPath: TL_CUT_S, boxShadow: `0 0 0 1.5px ${im.color}` },
+            "data-tl-thumb": !0,
+          },
+          HX("img", { src: img, alt: "", loading: "lazy", className: "h-full w-full object-cover" }),
+          HX("span", { "aria-hidden": "true", className: "absolute inset-0", style: { boxShadow: `inset 0 0 0 1.5px ${im.color}aa` } }),
+        ),
+      HX(
+        "span",
+        { className: `block min-w-0 flex-1 ${left ? "md:text-right" : ""}` },
+        p &&
+          HX(
+            "span",
+            { className: "mb-0.5 block text-[10px] font-semibold uppercase tracking-[0.2em] text-red-400/80 md:hidden" },
+            `${String(p.d).padStart(2, "0")} ${TL_MES3[p.m - 1]} ${p.y} \xB7 ${TL_DOW[p.dow]}`,
+          ),
+        HX(
+          "span",
+          { className: "block text-[15px] font-bold uppercase leading-tight tracking-[0.06em] text-yellow-300 [overflow-wrap:anywhere]", "data-tl-title": !0 },
+          e.title || "Sem t\xEDtulo",
+        ),
+        e.location &&
+          HX(
+            "span",
+            { className: `mt-0.5 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-300/90 ${left ? "md:justify-end" : ""}` },
+            HX(TlPin, { size: 11 }),
+            HX("span", { className: "min-w-0 truncate" }, e.location),
+          ),
+        e.desc && HX("span", { className: "mt-1.5 block text-[13px] leading-snug text-zinc-300 line-clamp-3 [overflow-wrap:anywhere]" }, e.desc),
+        HX(
+          "span",
+          { className: `mt-2 flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-[0.22em] ${left ? "md:justify-end" : ""}`, style: { color: im.color } },
+          HX("span", { className: "h-1.5 w-1.5 rounded-full", style: { background: im.color, boxShadow: im.glow } }),
+          im.label,
+        ),
+      ),
+    ),
+  );
+}
+// ---- linha de um acontecimento: data | nó | cartão (alternando os lados em telas largas) ----
+function TlEventRow({ e, side, onOpen }) {
+  let im = tlImpact(e.impact),
+    p = tlValid(e.date) ? tlParts(e.date) : null,
+    left = side === "left";
+  return HX(
+    "div",
+    { className: "relative grid grid-cols-[44px_minmax(0,1fr)] items-center py-2.5 md:grid-cols-[minmax(0,1fr)_64px_minmax(0,1fr)]", "data-tl-event": e.id },
+    // data (telas largas: do outro lado da trilha)
+    HX(
+      "div",
+      { className: `hidden min-w-0 flex-col justify-center md:row-start-1 md:flex ${left ? "md:col-start-3 md:items-start md:pl-4 md:text-left" : "md:col-start-1 md:items-end md:pr-4 md:text-right"}` },
+      p
+        ? [
+            HX(
+              "span",
+              { key: "d", className: "font-orbit text-[30px] font-black leading-none text-zinc-100", style: { textShadow: `0 0 12px ${im.color}66` } },
+              String(p.d).padStart(2, "0"),
+            ),
+            HX("span", { key: "m", className: "mt-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-red-400/80" }, `${TL_MES3[p.m - 1]} \xB7 ${TL_DOW[p.dow]}`),
+          ]
+        : HX("span", { className: "text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-500" }, "Sem data"),
+    ),
+    // nó do dia (brilho = impacto emocional)
+    HX(
+      "button",
+      {
+        type: "button",
+        tabIndex: -1,
+        "aria-hidden": "true",
+        onClick: () => onOpen(e.id),
+        "data-tl-dot": e.impact,
+        className: `relative z-10 col-start-1 row-start-1 h-[16px] w-[16px] justify-self-center rounded-full border-2 bg-[#07050a] transition-transform duration-150 hover:scale-125 md:col-start-2 ${im.pulse ? "tl-ping" : ""}`,
+        style: { borderColor: im.color, color: im.color, boxShadow: im.pulse ? void 0 : im.glow },
+      },
+      HX("span", { className: "absolute inset-[3px] rounded-full", style: { background: im.color, opacity: 0.85 } }),
+    ),
+    HX(TlCard, { e, im, p, left, onOpen }),
+  );
+}
+// ---- ponta da trilha (início / agora) ----
+function TlCap({ label }) {
+  return HX(
+    "div",
+    { className: "relative flex items-center py-5 pl-[13px] md:justify-center md:pl-0" },
+    HX(
+      "span",
+      { className: "relative z-10 flex items-center gap-2.5 md:flex-col md:gap-1.5" },
+      HX("span", { className: "tl-ping h-[18px] w-[18px] rounded-full border-2 border-cyan-300 bg-[#04161c] text-cyan-300" }),
+      HX("span", { className: "bg-[#07050a]/80 px-1 text-[9.5px] font-semibold uppercase tracking-[0.32em] text-cyan-400/80" }, label),
+    ),
+  );
+}
+// ---- modal tecnológico de edição ----
+function TlModal({ item, onSave, onDelete, onClose }) {
+  let edit = !!item,
+    [f, setF] = (0, K.useState)(() => ({ ...tlNew(), ...(item || {}) })),
+    [err, setErr] = (0, K.useState)(""),
+    [delAsk, setDelAsk] = (0, K.useState)(!1),
+    set = (k, v) => (setF((o) => ({ ...o, [k]: v })), setErr("")),
+    im = tlImpact(f.impact),
+    img = tlImgOk(f.image) ? f.image : "",
+    save = () => {
+      if (!tlValid(f.date)) return setErr("Informe a data do acontecimento.");
+      let title = String(f.title || "").trim();
+      if (!title) return setErr("D\xEA um t\xEDtulo ao acontecimento.");
+      (onSave({
+        date: f.date,
+        title: title.slice(0, 160),
+        desc: String(f.desc || "").slice(0, 4e3),
+        image: img,
+        location: String(f.location || "").trim().slice(0, 120),
+        impact: im.id,
+      }),
+        onClose());
+    },
+    lbl = HLBL,
+    sel = `${HIN} cursor-pointer [&>option]:bg-zinc-950 [&>option]:text-cyan-100`;
+  (0, K.useEffect)(() => {
+    let k = (ev) => {
+      ev.key === "Escape" && onClose();
+    };
+    return (window.addEventListener("keydown", k), () => window.removeEventListener("keydown", k));
+  }, [onClose]);
+  return HX(
+    "div",
+    {
+      className: "fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6",
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": edit ? "Editar acontecimento" : "Novo acontecimento",
+      "data-tl-modal": !0,
+    },
+    HX("button", { type: "button", className: "fade-in absolute inset-0 cursor-default bg-black/75 backdrop-blur-[3px]", onClick: onClose, "aria-label": "Fechar" }),
+    HX(
+      "div",
+      { className: "pop-in relative flex max-h-full w-full max-w-3xl flex-col" },
+      HX("div", { className: "absolute inset-0 bg-cyan-400/80", style: { clipPath: it } }),
+      HX("div", { className: "absolute bg-[#0b0d14]", style: { inset: 1.5, clipPath: it } }),
+      HX(
+        "div",
+        { className: "relative m-[1.5px] flex min-h-0 flex-1 flex-col", style: { clipPath: it } },
+        // cabeçalho
+        HX(
+          "div",
+          { className: "flex items-start justify-between gap-3 border-b border-cyan-900/60 px-5 pb-3 pt-5 sm:px-6" },
+          HX(
+            "div",
+            {},
+            HX("div", { className: "text-[9px] tracking-[0.35em] text-cyan-500/80" }, "LINHA//DO//TEMPO \xB7 REGISTRO"),
+            HX("h2", { className: "text-xl font-bold uppercase tracking-[0.12em] text-yellow-400" }, edit ? "Editar acontecimento" : "Novo acontecimento"),
+          ),
+          HX(
+            "button",
+            { type: "button", onClick: onClose, "aria-label": "Fechar", className: "p-1.5 text-red-400 transition-colors hover:bg-red-900/40 hover:text-cyan-300" },
+            HX(Da, { size: 20 }),
+          ),
+        ),
+        HX(
+          "div",
+          { className: "min-h-0 flex-1 overflow-y-auto" },
+          HX(
+            "div",
+            { className: "grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] sm:p-6" },
+            // imagem (grande) + envio
+            HX(
+              "div",
+              { className: "min-w-0" },
+              HX(
+                "div",
+                { className: "relative", style: { filter: `drop-shadow(0 0 12px ${im.color}40)` } },
+                HX("div", { className: "absolute inset-0", style: { clipPath: ot, background: `linear-gradient(160deg,${im.color}cc,rgba(127,29,29,.6))` } }),
+                HX(
+                  "div",
+                  { className: "relative m-[1.5px] aspect-[4/3] overflow-hidden bg-[#07080d]", style: { clipPath: ot }, "data-tl-modal-image": img ? "1" : "0" },
+                  img
+                    ? HX("img", { src: img, alt: String(f.title || "").trim() || "Imagem do acontecimento", className: "h-full w-full object-cover" })
+                    : HX(
+                        "div",
+                        {
+                          className: "flex h-full w-full flex-col items-center justify-center gap-2 text-zinc-600",
+                          style: { background: "repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px)" },
+                        },
+                        HX(zf, { size: 34, strokeWidth: 1.4 }),
+                        HX("span", { className: "text-[10px] font-semibold uppercase tracking-[0.25em]" }, "Sem imagem"),
+                      ),
+                  HX(
+                    "span",
+                    {
+                      className: "absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/80 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.2em]",
+                      style: { color: im.color },
+                    },
+                    HX("span", { className: "h-1.5 w-1.5 rounded-full", style: { background: im.color, boxShadow: im.glow } }),
+                    im.label,
+                  ),
+                ),
+              ),
+              HX(
+                "div",
+                { className: "mt-3" },
+                HX("span", { className: lbl }, "Imagem"),
+                HX(Od, { variant: "full", value: f.image, onChange: (v) => set("image", v), label: "Imagem do acontecimento", maxDim: 720, quality: 0.74 }),
+                HX("p", { className: "mt-1 text-[11px] text-zinc-500" }, "A imagem vira miniatura ao lado do n\xF3 e fica guardada no app."),
+              ),
+            ),
+            // campos
+            HX(
+              "div",
+              { className: "grid min-w-0 grid-cols-2 content-start gap-x-3 gap-y-3" },
+              HX(
+                "label",
+                { className: "block min-w-0" },
+                HX("span", { className: lbl }, "Data do acontecimento"),
+                HX("input", {
+                  type: "date",
+                  "aria-label": "Data do acontecimento",
+                  value: f.date || "",
+                  onChange: (ev) => set("date", ev.target.value),
+                  className: `${HIN} font-orbit text-[12px]`,
+                }),
+              ),
+              HX(
+                "label",
+                { className: "block min-w-0" },
+                HX("span", { className: lbl }, "Impacto emocional"),
+                HX(
+                  "span",
+                  { className: "relative block" },
+                  HX(
+                    "select",
+                    {
+                      "aria-label": "Impacto emocional",
+                      value: im.id,
+                      onChange: (ev) => set("impact", ev.target.value),
+                      className: `${sel} pl-7 font-semibold uppercase tracking-wider`,
+                      style: { color: im.color },
+                    },
+                    ...TL_IMPACT.map((o) => HX("option", { key: o.id, value: o.id }, o.label)),
+                  ),
+                  HX("span", {
+                    "aria-hidden": "true",
+                    className: `pointer-events-none absolute left-2.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full ${im.pulse ? "tl-ping" : ""}`,
+                    style: { background: im.color, color: im.color, boxShadow: im.pulse ? void 0 : im.glow },
+                  }),
+                ),
+              ),
+              HX(
+                "label",
+                { className: "col-span-2 block" },
+                HX("span", { className: lbl }, "Principal acontecimento / t\xEDtulo"),
+                HX("input", {
+                  autoFocus: !0,
+                  type: "text",
+                  "aria-label": "Principal acontecimento",
+                  value: f.title || "",
+                  maxLength: 160,
+                  placeholder: "Ex.: Aprovado no mestrado",
+                  onChange: (ev) => set("title", ev.target.value),
+                  onKeyDown: (ev) => {
+                    ev.key === "Enter" && save();
+                  },
+                  className: `${HIN} font-semibold text-yellow-200`,
+                }),
+              ),
+              HX(
+                "label",
+                { className: "col-span-2 block" },
+                HX("span", { className: lbl }, "Localiza\xE7\xE3o / contexto"),
+                HX("input", {
+                  type: "text",
+                  "aria-label": "Localiza\xE7\xE3o / contexto",
+                  value: f.location || "",
+                  maxLength: 120,
+                  placeholder: "Ex.: Bahia, Brasil \xB7 Faculdade",
+                  onChange: (ev) => set("location", ev.target.value),
+                  className: HIN,
+                }),
+              ),
+              HX(
+                "label",
+                { className: "col-span-2 block" },
+                HX(
+                  "span",
+                  { className: `${lbl} flex items-center justify-between` },
+                  "Descri\xE7\xE3o detalhada",
+                  HX("span", { className: "font-normal normal-case tracking-normal text-zinc-500" }, `${String(f.desc || "").length}/4000`),
+                ),
+                HX("textarea", {
+                  "aria-label": "Descri\xE7\xE3o detalhada",
+                  value: f.desc || "",
+                  rows: 7,
+                  maxLength: 4e3,
+                  placeholder: "O que aconteceu, quem estava, o que isso mudou…",
+                  onChange: (ev) => set("desc", ev.target.value),
+                  className: `${HIN} resize-y leading-snug`,
+                }),
+              ),
+            ),
+          ),
+        ),
+        // rodapé
+        HX(
+          "div",
+          { className: "flex flex-wrap items-center gap-3 border-t border-white/5 bg-black/30 px-5 py-3 sm:px-6" },
+          err && HX("p", { className: "w-full text-[12px] uppercase tracking-wider text-yellow-400", role: "alert" }, err),
+          edit && onDelete
+            ? delAsk
+              ? HX(HBtn, { tone: "danger", onClick: () => (onDelete(), onClose()), label: "Confirmar exclus\xE3o do acontecimento" }, HX(yt, { size: 13 }), "Excluir de vez")
+              : HX(HBtn, { onClick: () => setDelAsk(!0), label: "Excluir acontecimento" }, HX(yt, { size: 13 }), "Excluir")
+            : null,
+          HX("span", { className: "flex-1" }),
+          HX(ye, { onClick: onClose }, "Cancelar"),
+          HX(ye, { variant: "primary", onClick: save }, HX(edit ? ls : gt, { size: 15, strokeWidth: 2.5 }), edit ? "Salvar" : "Registrar"),
+        ),
+      ),
+    ),
+  );
+}
+// ---- página da aba LINHA DO TEMPO ----
+function TimelinePage({ events, setEvents }) {
+  let pageRef = (0, K.useRef)(null),
+    hudRef = (0, K.useRef)(null),
+    [modal, setModal] = (0, K.useState)(null),
+    [q, setQ] = (0, K.useState)(""),
+    [imp, setImp] = (0, K.useState)("all"),
+    [focusId, setFocusId] = (0, K.useState)(null),
+    [order, setOrder] = (0, K.useState)(() => {
+      try {
+        return localStorage.getItem(TL_ORDER_KEY) === "desc" ? "desc" : "asc";
+      } catch {
+        return "asc";
+      }
+    }),
+    counts = (0, K.useMemo)(() => TL_IMPACT.reduce((o, x) => ((o[x.id] = events.filter((e) => e.impact === x.id).length), o), {}), [events]),
+    term = tlFold(q.trim()),
+    filtered = (0, K.useMemo)(
+      () => events.filter((e) => (imp === "all" || e.impact === imp) && (!term || tlFold(`${e.title} ${e.desc} ${e.location}`).includes(term))),
+      [events, imp, term],
+    ),
+    // ordem cronológica automática + agrupamento por ANO e MÊS: os nós maiores e menores nascem daqui
+    tree = (0, K.useMemo)(() => {
+      let dir = order === "desc" ? -1 : 1,
+        dated = [],
+        undated = [];
+      for (let e of filtered) (tlValid(e.date) ? dated : undated).push(e);
+      dated.sort((a, b) => dir * (new Date(a.date) - new Date(b.date)) || dir * ((a.createdAt || 0) - (b.createdAt || 0)));
+      let years = [];
+      for (let e of dated) {
+        let y = Number(e.date.slice(0, 4)),
+          m = Number(e.date.slice(5, 7)),
+          Y = years[years.length - 1];
+        (!Y || Y.year !== y) && years.push((Y = { year: y, count: 0, months: [] }));
+        let M = Y.months[Y.months.length - 1];
+        (!M || M.month !== m) && Y.months.push((M = { month: m, events: [] }));
+        (M.events.push(e), Y.count++);
+      }
+      return { years, undated, total: dated.length + undated.length };
+    }, [filtered, order]),
+    allYears = (0, K.useMemo)(() => [...new Set(events.filter((e) => tlValid(e.date)).map((e) => Number(e.date.slice(0, 4))))].sort((a, b) => a - b), [events]),
+    span = allYears.length ? (allYears.length === 1 ? String(allYears[0]) : `${allYears[0]}–${allYears[allYears.length - 1]}`) : "",
+    editing = modal && modal.id ? events.find((e) => e.id === modal.id) : null,
+    open = (id) => setModal({ id }),
+    add = () => setModal({ id: null }),
+    flip = () => {
+      let v = order === "asc" ? "desc" : "asc";
+      setOrder(v);
+      try {
+        localStorage.setItem(TL_ORDER_KEY, v);
+      } catch {}
+    },
+    // rola até um ano (ou acontecimento) descontando o HUD fixo
+    goTo = (sel) => {
+      let pg = pageRef.current,
+        el = pg && pg.querySelector(sel);
+      if (!pg || !el) return;
+      let top = pg.scrollTop + el.getBoundingClientRect().top - pg.getBoundingClientRect().top - (hudRef.current ? hudRef.current.offsetHeight : 0) - 12;
+      try {
+        pg.scrollTo({ top, behavior: "smooth" });
+      } catch {
+        pg.scrollTop = top;
+      }
+    },
+    idx = 0; // alternância esquerda/direita contínua ao longo de toda a trilha
+  // depois de registrar/editar, a trilha rola até o acontecimento
+  (0, K.useEffect)(() => {
+    if (!focusId) return;
+    let t = setTimeout(() => (goTo(`[data-tl-event="${focusId}"]`), setFocusId(null)), 60);
+    return () => clearTimeout(t);
+  }, [focusId, events]);
+  let row = (e) => HX(TlEventRow, { key: e.id, e, side: idx++ % 2 ? "left" : "right", onOpen: open });
+  return HX(
+    "div",
+    { ref: pageRef, className: "min-h-0 flex-1 overflow-y-auto px-4 pb-10 sm:px-8", "data-timeline-page": !0 },
+    HX("style", {}, TL_CSS),
+    // HUD fixo no topo da tela (o botão de novo acontecimento fica sempre à mão)
+    HX(
+      "div",
+      {
+        ref: hudRef,
+        className: "sticky top-0 z-20 -mx-4 border-b border-cyan-900/40 bg-[#07050a]/90 px-4 pb-3 backdrop-blur-md sm:-mx-8 sm:px-8",
+        "data-tl-hud": !0,
+      },
+      HX(Pd, {
+        icon: TlIcon,
+        title: "Linha do tempo",
+        sub: HX("span", { className: "hidden sm:inline" }, `Mem\xF3rias e marcos \xB7 ${events.length} acontecimento${events.length === 1 ? "" : "s"}${span ? ` \xB7 ${span}` : ""}`),
+        right: HX(
+          ye,
+          { variant: "primary", onClick: add },
+          HX("span", {}, "["),
+          HX(gt, { size: 15, strokeWidth: 3 }),
+          HX("span", { className: "sm:hidden" }, "Novo"),
+          HX("span", { className: "hidden sm:inline" }, "Novo acontecimento"),
+          HX("span", {}, "]"),
+        ),
+      }),
+      HX(
+        "div",
+        {
+          className: "-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] sm:-mx-8 sm:px-8 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0 lg:pb-0 [&::-webkit-scrollbar]:hidden",
+          "data-tl-controls": !0,
+        },
+        HX(
+          "div",
+          {
+            className: "flex shrink-0 items-center gap-2 lg:min-w-0 lg:shrink lg:flex-wrap",
+            role: "group",
+            "aria-label": "Filtrar por impacto",
+          },
+          HX(MdChip, { on: imp === "all", onClick: () => setImp("all"), label: "Mostrar todos" }, `Todos \xB7 ${events.length}`),
+          ...TL_IMPACT.map((x) =>
+            HX(
+              MdChip,
+              { key: x.id, on: imp === x.id, onClick: () => setImp(imp === x.id ? "all" : x.id), st: { led: x.color, glow: x.glow, pulse: x.pulse }, label: `Filtrar: ${x.label}` },
+              `${x.label} \xB7 ${counts[x.id]}`,
+            ),
+          ),
+        ),
+        HX(
+          "label",
+          { className: "relative w-44 shrink-0 lg:w-auto lg:min-w-[10rem] lg:max-w-xs lg:flex-1" },
+          HX(ss, { size: 14, className: "pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" }),
+          HX("input", {
+            type: "search",
+            "aria-label": "Buscar acontecimento",
+            value: q,
+            placeholder: "Buscar t\xEDtulo, lugar, descri\xE7\xE3o…",
+            onChange: (ev) => setQ(ev.target.value),
+            className: `${HIN} pl-8`,
+          }),
+        ),
+        HX(
+          HBtn,
+          { onClick: flip, label: order === "asc" ? "Ordem: mais antigo primeiro (inverter)" : "Ordem: mais recente primeiro (inverter)", className: "shrink-0" },
+          HX("span", { className: "font-orbit text-[12px]" }, order === "asc" ? "↓" : "↑"),
+          order === "asc" ? "Antigo → recente" : "Recente → antigo",
+        ),
+        allYears.length > 1 &&
+          HX(
+            "div",
+            { className: "flex shrink-0 items-center gap-1.5 lg:mt-0.5 lg:basis-full", "data-tl-years": !0 },
+          HX("span", { className: "shrink-0 pr-1 text-[9.5px] font-semibold uppercase tracking-[0.25em] text-red-400/70" }, "Saltar para"),
+          ...allYears.map((y) =>
+            HX(
+              "button",
+              {
+                key: y,
+                type: "button",
+                onClick: () => goTo(`[data-tl-year="${y}"]`),
+                className: "shrink-0 border border-cyan-500/40 bg-cyan-500/5 px-2 py-0.5 font-orbit text-[11px] text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-400/15 hover:text-white",
+                style: { clipPath: TL_CUT_S },
+              },
+              y,
+            ),
+          ),
+        ),
+      ),
+    ),
+    // trilha
+    events.length === 0
+      ? HX(
+          "div",
+          { className: "mx-auto mt-10 flex max-w-md flex-col items-center gap-4 border border-dashed border-cyan-500/30 bg-black/30 px-6 py-10 text-center", "data-tl-empty": !0 },
+          HX("div", { "aria-hidden": "true", className: "tl-fiber relative h-24 w-[3px]" }),
+          HX("span", { "aria-hidden": "true", className: "tl-ping -mt-4 h-[18px] w-[18px] rounded-full border-2 border-cyan-300 bg-[#04161c] text-cyan-300" }),
+          HX("p", { className: "text-[13px] uppercase tracking-[0.2em] text-cyan-200/80" }, "Sua linha do tempo est\xE1 vazia \xB7 registre o primeiro acontecimento"),
+          HX(ye, { variant: "primary", onClick: add }, HX(gt, { size: 15, strokeWidth: 3 }), "Novo acontecimento"),
+        )
+      : tree.total === 0
+        ? HX("p", { className: "mt-10 text-center text-[13px] uppercase tracking-[0.2em] text-zinc-500" }, "Nenhum acontecimento com esse filtro")
+        : HX(
+            "div",
+            { className: "relative mx-auto mt-4 max-w-5xl", "data-tl-track": !0, "data-tl-order": order },
+            HX("div", { "aria-hidden": "true", className: "tl-fiber pointer-events-none absolute bottom-0 left-[22px] top-0 w-[3px] -translate-x-1/2 md:left-1/2" }),
+            HX(TlCap, { label: order === "asc" ? "In\xEDcio da trilha" : "Agora" }),
+            ...tree.years.map((Y) =>
+              HX(
+                "section",
+                { key: Y.year, "data-tl-year": Y.year, "aria-label": `Ano ${Y.year}` },
+                HX(TlYearNode, { year: Y.year, count: Y.count }),
+                ...Y.months.map((M) =>
+                  HX("div", { key: M.month, "data-tl-month": `${Y.year}-${String(M.month).padStart(2, "0")}` }, HX(TlMonthNode, { month: M.month, year: Y.year, count: M.events.length }), ...M.events.map(row)),
+                ),
+              ),
+            ),
+            tree.undated.length > 0 &&
+              HX(
+                "section",
+                { key: "sem-data", "data-tl-year": "sem-data", "aria-label": "Sem data" },
+                HX(TlYearNode, { year: "Sem data", count: tree.undated.length, muted: !0 }),
+                ...tree.undated.map(row),
+              ),
+            HX(TlCap, { label: order === "asc" ? "Agora \xB7 continue escrevendo" : "In\xEDcio da trilha" }),
+          ),
+    modal &&
+      kbPortal(
+        HX(TlModal, {
+          key: modal.id || "new",
+          item: editing,
+          onClose: () => setModal(null),
+          onSave: (v) => {
+            if (editing) (setEvents((xs) => xs.map((x) => (x.id === editing.id ? { ...x, ...v } : x))), setFocusId(editing.id));
+            else {
+              let n = tlNew(v);
+              // o novo acontecimento precisa aparecer: limpa busca e filtro
+              (setEvents((xs) => [...xs, n]), setQ(""), setImp("all"), setFocusId(n.id));
+            }
+          },
+          onDelete: editing ? () => setEvents((xs) => xs.filter((x) => x.id !== editing.id)) : void 0,
+        }),
+      ),
+  );
+}
+
 // Ponto de montagem do bot\xE3o de Sincroniza\xE7\xE3o/Backup (o motor fica no script do <head>).
 // Ao desmontar (sair do hub), o bot\xE3o e o painel somem: n\xE3o ficam mais flutuando nas outras abas.
 function StbkSlot() {
@@ -13805,6 +14541,8 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
     [countdowns, setCountdowns] = (0, K.useState)(cdLoadAll),
     // Mídias: estante (caixas Blu-ray) [{ id, name, year, format, duration, cover, status, genreType, rating, review, episodesCount, seasonsCount }]
     [mediaLibrary, setMediaLibrary] = (0, K.useState)(mdLoad),
+    // Linha do tempo: [{ id, date, title, desc, image, location, impact, createdAt }] (ordem e agrupamento calculados na tela)
+    [timelineEvents, setTimelineEvents] = (0, K.useState)(tlLoad),
     dayRef = (0, K.useRef)(""),
     navRef = (0, K.useRef)(null),
     [U, Ie] = (0, K.useState)(Lie),
@@ -13912,6 +14650,12 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
       } catch {}
       ti(MD_KEY, mediaLibrary) || b(!0);
     }, [mediaLibrary]),
+    (0, K.useEffect)(() => {
+      try {
+        if (!timelineEvents.length && localStorage.getItem(TL_KEY) === null) return;
+      } catch {}
+      ti(TL_KEY, timelineEvents) || b(!0);
+    }, [timelineEvents]),
     // Virada do dia (meia-noite, volta de suspensão, aba reaberta): recalcula as ofensivas sem recarregar a página
     (0, K.useEffect)(() => {
       dayRef.current = hbDay;
@@ -14567,6 +15311,7 @@ function y2({ initialScreen: e = "hub", initialTab: t = "hub" }) {
               }),
             n === "habits" && (0, u.jsx)(HabitsPage, { habits, setHabits, today: hbDay }),
             n === "media" && (0, u.jsx)(MediaPage, { items: mediaLibrary, setItems: setMediaLibrary }),
+            n === "timeline" && (0, u.jsx)(TimelinePage, { events: timelineEvents, setEvents: setTimelineEvents }),
           ],
         },
         Ir ? i : n,
