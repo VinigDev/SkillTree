@@ -1,0 +1,87 @@
+{
+  "name": "Skill Tree · OS Pessoal",
+  "short_name": "Skill Tree",
+  "description": "Sistema pessoal de organização e desenvolvimento: hábitos, tarefas, finanças, jogos, mídias, leituras e linha do tempo.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050506",
+  "theme_color": "#0a0507",
+  "categories": [
+    "productivity",
+    "lifestyle"
+  ],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Hábitos · check-in do dia",
+      "short_name": "Hábitos",
+      "url": "./?tab=habits",
+      "icons": [
+        {
+          "src": "shortcut-habits.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Tarefas (Kanban)",
+      "short_name": "Tarefas",
+      "url": "./?tab=tasks",
+      "icons": [
+        {
+          "src": "shortcut-tasks.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Backlog de jogos",
+      "short_name": "Backlog",
+      "url": "./?tab=games",
+      "icons": [
+        {
+          "src": "shortcut-games.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Linha do tempo",
+      "short_name": "Linha do tempo",
+      "url": "./?tab=timeline",
+      "icons": [
+        {
+          "src": "shortcut-timeline.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}
